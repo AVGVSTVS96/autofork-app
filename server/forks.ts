@@ -11,6 +11,7 @@ type GitHubRepo = {
   description: string | null
   stargazers_count: number
   default_branch: string
+  created_at: string
   fork: boolean
   private: boolean
   parent?: { full_name: string }
@@ -162,7 +163,12 @@ export const prepare = (user: User, owner: string, name: string) =>
     if (!fork) {
       return { owner: user.login, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork` } satisfies ForkState
     }
-    const ready = yield* reachable(user, fork.owner.login, fork.name)
+    const fresh = Date.now() - Date.parse(fork.created_at) < 120_000
+    const ready = yield* reachable(user, fork.owner.login, fork.name).pipe(
+      Effect.flatMap((ok) => (ok || !fresh ? Effect.succeed(ok) : Effect.fail("not yet"))),
+      Effect.retry({ schedule: Schedule.spaced("1 second"), times: 8 }),
+      Effect.orElseSucceed(() => false),
+    )
     return {
       owner: fork.owner.login,
       name: fork.name,
@@ -233,9 +239,19 @@ export const start = (user: User, owner: string, name: string, change: string, a
         yield* disableInherited(user.token, owner, name)
       }
     }
-    yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)
+    const sha = yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)
+    yield* kickOff(user.token, owner, name, branch, sha)
     return { owner, name }
   })
+
+const kickOff = (token: string, owner: string, name: string, branch: string, sha: string) =>
+  GitHub.request<{ total_count: number }>(token, "GET", `/repos/${owner}/${name}/actions/runs?head_sha=${sha}&per_page=1`).pipe(
+    Effect.flatMap(({ total_count }) => (total_count ? Effect.void : Effect.fail("no run yet"))),
+    Effect.retry({ schedule: Schedule.spaced("2 seconds"), times: 5 }),
+    Effect.catch(() =>
+      GitHub.request(token, "POST", `/repos/${owner}/${name}/actions/workflows/autofork.yml/dispatches`, { ref: branch }).pipe(Effect.ignore),
+    ),
+  )
 
 export const addChange = (user: User, owner: string, name: string, change: string) =>
   Effect.gen(function* () {
@@ -245,9 +261,10 @@ export const addChange = (user: User, owner: string, name: string, change: strin
     const ids = new Set((yield* listDir(user.token, owner, name, ".autofork")).map((entry) => entry.name))
     let id = slug(change)
     for (let n = 2; ids.has(id); n++) id = `${slug(change)}-${n}`
-    yield* GitHub.commit(user.token, owner, name, repo.default_branch, `autofork: ${change.trim()}`, [
+    const sha = yield* GitHub.commit(user.token, owner, name, repo.default_branch, `autofork: ${change.trim()}`, [
       { path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) },
     ])
+    yield* kickOff(user.token, owner, name, repo.default_branch, sha)
     return { owner, name }
   })
 
