@@ -10,6 +10,7 @@
   "dependencies": {
     "@effect/atom-react": "4.0.3",
     "@effect/platform-browser": "4.0.3",
+    "@noble/hashes": "2",
     "@tanstack/react-router": "1.170.42",
     "effect": "4.0.3",
     "react": "19.3.0",

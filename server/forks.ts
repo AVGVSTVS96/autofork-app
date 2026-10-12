@@ -1,0 +1,321 @@
+import * as Effect from "effect/Effect"
+import * as Schedule from "effect/Schedule"
+import { type Agent, type Change, type ForkState, Problem, type Repo, type Run } from "../shared/api.ts"
+import * as GitHub from "./github.ts"
+import type { User } from "./session.ts"
+
+type GitHubRepo = {
+  name: string
+  full_name: string
+  owner: { login: string; avatar_url: string }
+  description: string | null
+  stargazers_count: number
+  default_branch: string
+  fork: boolean
+  private: boolean
+  parent?: { full_name: string }
+}
+
+const toRepo = (repo: GitHubRepo): Repo => ({
+  owner: repo.owner.login,
+  name: repo.name,
+  description: repo.description,
+  stars: repo.stargazers_count,
+  avatar: repo.owner.avatar_url,
+})
+
+const problem = (message: string) => () => Effect.fail(new Problem({ message }))
+
+const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "")
+
+const SPLIT = /^(.+?)(?:,\s*but\s+|\s+but\s+|\s*:\s+|\s+(?:—|–|-)\s+|\s+to\s+)(.+)$/i
+const GITHUB = /^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$/i
+
+export const resolve = (q: string, token: GitHub.Token) =>
+  Effect.gen(function* () {
+    const [, app = q, change = ""] = q.trim().match(SPLIT) ?? []
+    const named = app.trim().match(GITHUB)
+    if (named) {
+      const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${named[1]}/${named[2]}`).pipe(
+        Effect.catch(problem(`There's no public repo at github.com/${named[1]}/${named[2]}.`)),
+      )
+      return { repo: toRepo(repo), change: change.trim(), others: [] }
+    }
+    const query = new URLSearchParams({ q: `${app.trim()} fork:false`, sort: "stars", per_page: "4" })
+    const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(
+      Effect.catch(problem("GitHub search is busy. Name the repo as owner/name instead.")),
+    )
+    const [repo, ...others] = found.items.map(toRepo)
+    if (!repo) return yield* new Problem({ message: `No open source repo on GitHub matches "${app.trim()}". Try owner/name.` })
+    const exact = squash(repo.name) === squash(app)
+    return { repo, change: change.trim(), others: exact ? [] : others }
+  })
+
+const KNOWN: Record<string, { verify: string }> = {
+  "pingdotgg/t3code": { verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck" },
+}
+
+const setupSteps = (files: ReadonlySet<string>) => {
+  const node = files.has(".nvmrc")
+    ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .nvmrc"]
+    : files.has(".node-version")
+      ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .node-version"]
+      : ["      - uses: actions/setup-node@v7", "        with:", "          node-version: 24"]
+  if (files.has("pnpm-lock.yaml")) return ["      - uses: pnpm/action-setup@v6", ...node]
+  if (files.has("bun.lock") || files.has("bun.lockb")) return ["      - uses: oven-sh/setup-bun@v2"]
+  if (files.has("package-lock.json") || files.has("yarn.lock") || files.has("package.json")) return node
+  return []
+}
+
+export const CODEX_AUTH_URL = "https://autofork-app.vercel.app/api/chatgpt/auth"
+
+const workflow = (branch: string, setup: ReadonlyArray<string>) =>
+  [
+    "name: autofork",
+    "",
+    "on:",
+    "  schedule:",
+    '    - cron: "17 * * * *"',
+    "  workflow_dispatch:",
+    "  push:",
+    `    branches: [${branch}]`,
+    '    paths: [".autofork/**"]',
+    "",
+    "permissions:",
+    "  contents: write",
+    "  id-token: write",
+    "",
+    "concurrency: autofork",
+    "",
+    "jobs:",
+    "  sync:",
+    "    runs-on: ubuntu-latest",
+    "    timeout-minutes: 60",
+    "    steps:",
+    "      - uses: actions/checkout@v7",
+    "        with:",
+    "          fetch-depth: 0",
+    "          persist-credentials: false",
+    ...setup,
+    "      - uses: AVGVSTVS96/autofork@v1",
+    "        with:",
+    `          codex-auth-url: ${CODEX_AUTH_URL}`,
+    "        env:",
+    "          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
+    "          CODEX_AUTH: ${{ secrets.CODEX_AUTH }}",
+    "",
+  ].join("\n")
+
+const slug = (change: string) =>
+  change
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((word) => !["the", "a", "an", "to", "and", "so", "of", "it", "that"].includes(word))
+    .slice(0, 5)
+    .join("-")
+    .slice(0, 48)
+    .replace(/-+$/, "") || "change"
+
+const patchDoc = (change: string) => `${change.trim().replace(/^\w/, (first) => first.toUpperCase())}\n`
+
+const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
+  GitHub.request<{ name: string; type: string; size: number; sha: string }[]>(token, "GET", `/repos/${owner}/${name}/contents/${path}`).pipe(
+    Effect.catchIf(GitHub.missing, () => Effect.succeed([])),
+  )
+
+const findFork = (user: User, upstream: GitHubRepo) =>
+  Effect.gen(function* () {
+    const created = yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true }).pipe(
+      Effect.map((fork) => fork as GitHubRepo | null),
+      Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
+    )
+    if (created) return created
+    return yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${user.login}/${upstream.name}`).pipe(
+      Effect.map((repo) => (repo.parent?.full_name === upstream.full_name ? repo : null)),
+      Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+    )
+  })
+
+const reachable = (user: User, owner: string, name: string) =>
+  GitHub.request(user.token, "GET", `/repos/${owner}/${name}/actions/secrets/public-key`).pipe(
+    Effect.as(true),
+    Effect.catch(() => Effect.succeed(false)),
+  )
+
+export const prepare = (user: User, owner: string, name: string) =>
+  Effect.gen(function* () {
+    const upstream = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
+      Effect.catch(problem(`Can't find github.com/${owner}/${name}.`)),
+    )
+    if (upstream.private) return yield* new Problem({ message: "autofork works with public repos." })
+    if (upstream.owner.login === user.login) return yield* new Problem({ message: "That repo is already yours. Name the repo you'd fork." })
+    const fork = yield* findFork(user, upstream).pipe(Effect.catch(problem("GitHub couldn't make the fork. Try again in a moment.")))
+    if (!fork) {
+      return { owner: user.login, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork` } satisfies ForkState
+    }
+    const ready = yield* reachable(user, fork.owner.login, fork.name)
+    return {
+      owner: fork.owner.login,
+      name: fork.name,
+      status: ready ? "ready" : "grant",
+      link: ready ? null : "https://github.com/settings/installations",
+    } satisfies ForkState
+  })
+
+const retrying = { schedule: Schedule.spaced("2 seconds"), times: 15 }
+
+const releasesExist = (token: GitHub.Token, repo: string) =>
+  GitHub.request<{ name: string }[]>(token, "GET", `/repos/${repo}/tags?per_page=100`).pipe(
+    Effect.map((tags) => tags.some((tag) => !tag.name.includes("-"))),
+    Effect.orElseSucceed(() => false),
+  )
+
+const disableInherited = (token: string, owner: string, name: string) =>
+  Effect.gen(function* () {
+    const { workflows } = yield* GitHub.request<{ workflows: { id: number; path: string; state: string }[] }>(
+      token,
+      "GET",
+      `/repos/${owner}/${name}/actions/workflows?per_page=100`,
+    )
+    yield* Effect.forEach(
+      workflows.filter((flow) => flow.path !== ".github/workflows/autofork.yml" && flow.state === "active"),
+      (flow) => GitHub.request(token, "PUT", `/repos/${owner}/${name}/actions/workflows/${flow.id}/disable`).pipe(Effect.ignore),
+      { concurrency: 8 },
+    )
+  })
+
+const SECRETS = { claude: "CLAUDE_CODE_OAUTH_TOKEN", chatgpt: "CODEX_AUTH" } as const satisfies Record<Agent, string>
+
+export const start = (user: User, owner: string, name: string, change: string, agent: Agent, credential: string) =>
+  Effect.gen(function* () {
+    if (!change.trim()) return yield* new Problem({ message: "Say what you'd change." })
+    const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`).pipe(Effect.retry(retrying))
+    if (owner !== user.login) return yield* new Problem({ message: "That fork isn't yours." })
+    const branch = repo.default_branch
+    yield* GitHub.request(user.token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`).pipe(Effect.retry(retrying))
+
+    yield* GitHub.setSecret(user.token, owner, name, SECRETS[agent], credential)
+    yield* GitHub.deleteSecret(user.token, owner, name, SECRETS[agent === "claude" ? "chatgpt" : "claude"])
+    yield* GitHub.request(user.token, "PUT", `/repos/${owner}/${name}/actions/permissions`, { enabled: true, allowed_actions: "all" })
+
+    const control = yield* listDir(user.token, owner, name, ".autofork")
+    const managed = control.some((entry) => entry.name === "config.json")
+    const ids = new Set(control.filter((entry) => entry.type === "dir").map((entry) => entry.name))
+    let id = slug(change)
+    for (let n = 2; ids.has(id); n++) id = `${slug(change)}-${n}`
+
+    const files: GitHub.File[] = [{ path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) }]
+    const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
+      Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
+      Effect.map((content) => Buffer.from(content, "base64").toString()),
+      Effect.orElseSucceed(() => ""),
+    )
+    if (!managed || !flow.includes(SECRETS[agent])) {
+      const upstream = repo.parent?.full_name ?? `${owner}/${name}`
+      const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
+      files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch, setupSteps(root)) })
+      if (!managed) {
+        const follow = (yield* releasesExist(user.token, upstream)) ? "releases" : branch
+        const config = { upstream, follow, verify: KNOWN[upstream]?.verify }
+        files.push(
+          { path: ".autofork/config.json", content: `${JSON.stringify(config, null, 2)}\n` },
+          { path: ".autofork/.gitignore", content: "!*.patch\n" },
+        )
+        yield* disableInherited(user.token, owner, name)
+      }
+    }
+    yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)
+    return { owner, name }
+  })
+
+export const addChange = (user: User, owner: string, name: string, change: string) =>
+  Effect.gen(function* () {
+    if (owner !== user.login) return yield* new Problem({ message: "That fork isn't yours." })
+    if (!change.trim()) return yield* new Problem({ message: "Say what you'd change." })
+    const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
+    const ids = new Set((yield* listDir(user.token, owner, name, ".autofork")).map((entry) => entry.name))
+    let id = slug(change)
+    for (let n = 2; ids.has(id); n++) id = `${slug(change)}-${n}`
+    yield* GitHub.commit(user.token, owner, name, repo.default_branch, `autofork: ${change.trim()}`, [
+      { path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) },
+    ])
+    return { owner, name }
+  })
+
+type Job = { id: number; status: string; conclusion: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
+type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string }
+
+const MEANINGFUL = /^(autofork:|upstream |building |healing |built |healed |dropped |already |pushed |saved Codex|verify failed|these files|the agent|your fork|\S+ doesn't apply)/
+
+const logLines = (raw: string) =>
+  raw
+    .split("\n")
+    .map((line) => line.replace(/^\S+Z /, "").trimEnd())
+    .filter((line) => MEANINGFUL.test(line))
+    .slice(-12)
+
+const latestRun = (token: GitHub.Token, owner: string, name: string) =>
+  Effect.gen(function* () {
+    const { workflow_runs } = yield* GitHub.request<{ workflow_runs: WorkflowRun[] }>(
+      token,
+      "GET",
+      `/repos/${owner}/${name}/actions/workflows/autofork.yml/runs?per_page=1&exclude_pull_requests=true`,
+    )
+    const run = workflow_runs[0]
+    if (!run) return null
+    const { jobs } = yield* GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/jobs`)
+    const job = jobs[0]
+    const log = job && job.status === "completed" ? yield* GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(
+      Effect.map(logLines),
+      Effect.orElseSucceed((): string[] => []),
+    ) : []
+    return {
+      url: run.html_url,
+      status: run.status,
+      conclusion: run.conclusion,
+      startedAt: run.run_started_at,
+      updatedAt: run.updated_at,
+      steps: (job?.steps ?? []).map(({ name, status, conclusion }) => ({ name, status, conclusion })),
+      log,
+    } satisfies Run
+  }).pipe(Effect.catchIf(GitHub.missing, () => Effect.succeed(null)))
+
+const firstLine = (doc: string) => doc.trim().split("\n")[0]?.replace(/^#+\s*/, "") ?? ""
+
+export const status = (owner: string, name: string, viewer: User | undefined) =>
+  Effect.gen(function* () {
+    const token = yield* GitHub.repoToken(owner, name).pipe(Effect.orElseSucceed(() => viewer?.token))
+    const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${owner}/${name}`).pipe(
+      Effect.catch(problem(`There's no fork at github.com/${owner}/${name}.`)),
+    )
+    const control = yield* listDir(token, owner, name, ".autofork")
+    const changes = yield* Effect.forEach(
+      control.filter((entry) => entry.type === "dir"),
+      (dir) =>
+        Effect.gen(function* () {
+          const files = yield* listDir(token, owner, name, `.autofork/${dir.name}`)
+          const doc = yield* GitHub.text(token, `/repos/${owner}/${name}/contents/.autofork/${dir.name}/PATCH.md`).pipe(
+            Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
+            Effect.orElseSucceed(() => ""),
+          )
+          return { id: dir.name, text: firstLine(doc), built: files.some((file) => file.name.endsWith(".patch") && file.size > 0) } satisfies Change
+        }),
+      { concurrency: 6 },
+    )
+    const secrets = yield* GitHub.request<{ secrets: { name: string }[] }>(token, "GET", `/repos/${owner}/${name}/actions/secrets`).pipe(
+      Effect.map(({ secrets }) => new Set(secrets.map((secret) => secret.name))),
+      Effect.orElseSucceed(() => new Set<string>()),
+    )
+    const agent: Agent | null = secrets.has(SECRETS.claude) ? "claude" : secrets.has(SECRETS.chatgpt) ? "chatgpt" : null
+    return {
+      owner: repo.owner.login,
+      name: repo.name,
+      upstream: repo.parent?.full_name ?? null,
+      agent,
+      changes,
+      run: yield* latestRun(token, owner, name),
+      yours: viewer?.login === repo.owner.login,
+    }
+  })
