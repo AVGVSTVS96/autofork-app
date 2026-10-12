@@ -45,11 +45,11 @@ const Flow = ({ q }: { q: string }) => {
   return AsyncResult.match(resolved, {
     onInitial: () => <p className="note">Finding it on GitHub…</p>,
     onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
-    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} q={q} />,
+    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} />,
   })
 }
 
-const Plan = ({ repo, others, initialChange, q }: { repo: Repo; others: ReadonlyArray<Repo>; initialChange: string; q: string }) => {
+const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArray<Repo>; initialChange: string }) => {
   const [change, setChange] = useState(initialChange)
   const navigate = useNavigate()
   const me = useAtomValue(client.me)
