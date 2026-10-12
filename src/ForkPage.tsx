@@ -139,7 +139,11 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
         </Row>
       ))}
       {done && run.log.length ? (
-        <pre className="log">{run.log.join("\n")}</pre>
+        <ul className="story">
+          {run.log.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
       ) : null}
       <p className="links">
         <a href={run.url} target="_blank" rel="noreferrer">

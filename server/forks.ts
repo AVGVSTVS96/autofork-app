@@ -138,6 +138,13 @@ const findFork = (user: User, upstream: GitHubRepo) =>
     )
   })
 
+const installationPage = (user: User) =>
+  GitHub.request<{ installations: { id: number; account: { id: number } }[] }>(user.token, "GET", "/user/installations").pipe(
+    Effect.map(({ installations }) => installations.find((installation) => installation.account.id === user.id)),
+    Effect.map((installation) => `https://github.com/settings/installations${installation ? `/${installation.id}` : ""}`),
+    Effect.orElseSucceed(() => "https://github.com/settings/installations"),
+  )
+
 const reachable = (user: User, owner: string, name: string) =>
   GitHub.request(user.token, "GET", `/repos/${owner}/${name}/actions/secrets/public-key`).pipe(
     Effect.as(true),
@@ -160,7 +167,7 @@ export const prepare = (user: User, owner: string, name: string) =>
       owner: fork.owner.login,
       name: fork.name,
       status: ready ? "ready" : "grant",
-      link: ready ? null : "https://github.com/settings/installations",
+      link: ready ? null : yield* installationPage(user),
     } satisfies ForkState
   })
 
@@ -247,16 +254,23 @@ export const addChange = (user: User, owner: string, name: string, change: strin
 type Job = { id: number; status: string; conclusion: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
 type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string }
 
-const MEANINGFUL = /^(autofork:|upstream |building |healing |built |healed |dropped |already |pushed |saved Codex|verify failed|these files|the agent|your fork|\S+ doesn't apply)/
+const story = (raw: string, name: (id: string) => string) => {
+  const lines = raw.split("\n").map((line) => line.replace(/^\S+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trim())
+  const told = lines.flatMap((line): string[] => {
+    let match: RegExpMatchArray | null
+    if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
+    if ((match = line.match(/^healed (\S+)$/))) return [`Rebuilt "${name(match[1]!)}" on the new release`]
+    if ((match = line.match(/^dropped (\S+): (.+)$/))) return [`Dropped "${name(match[1]!)}": ${match[2]}`]
+    if (/^already up to date/.test(line)) return ["Already current"]
+    if ((match = line.match(/^(\S+) doesn't apply/))) return [`"${name(match[1]!)}" waits for a run that can rebuild it`]
+    if ((match = line.match(/^autofork: (.+)$/)) && !line.startsWith("autofork: sync ")) return [match[1]!]
+    if (/^(verify failed|the agent|these files)/.test(line)) return [line]
+    return []
+  })
+  return [...new Set(told)]
+}
 
-const logLines = (raw: string) =>
-  raw
-    .split("\n")
-    .map((line) => line.replace(/^\S+Z /, "").trimEnd())
-    .filter((line) => MEANINGFUL.test(line))
-    .slice(-12)
-
-const latestRun = (token: GitHub.Token, owner: string, name: string) =>
+const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (id: string) => string) =>
   Effect.gen(function* () {
     const { workflow_runs } = yield* GitHub.request<{ workflow_runs: WorkflowRun[] }>(
       token,
@@ -268,7 +282,7 @@ const latestRun = (token: GitHub.Token, owner: string, name: string) =>
     const { jobs } = yield* GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/jobs`)
     const job = jobs[0]
     const log = job && job.status === "completed" ? yield* GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(
-      Effect.map(logLines),
+      Effect.map((raw) => story(raw, describe)),
       Effect.orElseSucceed((): string[] => []),
     ) : []
     return {
@@ -282,7 +296,10 @@ const latestRun = (token: GitHub.Token, owner: string, name: string) =>
     } satisfies Run
   }).pipe(Effect.catchIf(GitHub.missing, () => Effect.succeed(null)))
 
-const firstLine = (doc: string) => doc.trim().split("\n")[0]?.replace(/^#+\s*/, "") ?? ""
+const summary = (doc: string) => {
+  const paragraph = doc.trim().replace(/^#+\s*/, "").split(/\n\s*\n/)[0]?.replace(/\s*\n\s*/g, " ") ?? ""
+  return paragraph.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? paragraph
+}
 
 export const status = (owner: string, name: string, viewer: User | undefined) =>
   Effect.gen(function* () {
@@ -300,7 +317,7 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
             Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
             Effect.orElseSucceed(() => ""),
           )
-          return { id: dir.name, text: firstLine(doc), built: files.some((file) => file.name.endsWith(".patch") && file.size > 0) } satisfies Change
+          return { id: dir.name, text: summary(doc), built: files.some((file) => file.name.endsWith(".patch") && file.size > 0) } satisfies Change
         }),
       { concurrency: 6 },
     )
@@ -315,7 +332,7 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
       upstream: repo.parent?.full_name ?? null,
       agent,
       changes,
-      run: yield* latestRun(token, owner, name),
+      run: yield* latestRun(token, owner, name, (id) => changes.find((change) => change.id === id)?.text ?? id),
       yours: viewer?.login === repo.owner.login,
     }
   })
