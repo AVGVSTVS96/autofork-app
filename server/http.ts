@@ -33,7 +33,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("resolve", ({ query }) => github(viewer.pipe(Effect.flatMap((user) => Forks.resolve(query.q, user?.token)))))
     .handle("me", () => viewer.pipe(Effect.map((user) => (user ? { login: user.login, avatar: user.avatar } : null))))
     .handle("signOut", () => Session.write({}))
-    .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name)))))
+    .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into)))))
     .handle("claudeStart", () =>
       Effect.gen(function* () {
         const { url, verifier, state } = Agents.claudeStart()

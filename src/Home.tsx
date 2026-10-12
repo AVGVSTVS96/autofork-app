@@ -126,6 +126,7 @@ const Plan = ({ repo, others, initialChange, q }: { repo: Repo; others: Readonly
 const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
   const prepare = useAtomSet(client.prepare, { mode: "promiseExit" })
   const [state, setState] = useState<ForkState | null>(null)
+  const [into, setInto] = useState<string | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const meRefresh = useAtomRefresh(client.me)
 
@@ -133,7 +134,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
     let live = true
     let timer: ReturnType<typeof setTimeout>
     const check = async () => {
-      const exit = await prepare({ payload: { owner: repo.owner, name: repo.name } })
+      const exit = await prepare({ payload: { owner: repo.owner, name: repo.name, into } })
       if (!live) return
       try {
         const next = client.unwrap(exit)
@@ -150,12 +151,30 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
       live = false
       clearTimeout(timer)
     }
-  }, [repo.owner, repo.name])
+  }, [repo.owner, repo.name, into])
 
   return (
     <>
       <li className={state?.status === "ready" ? "done" : "now"}>
         <span className="n">2</span>
+        <div>
+        {state && state.places.length > 1 ? (
+          <div className="choices small" role="group" aria-label="Fork into">
+            {state.places.map((place) => (
+              <button
+                type="button"
+                key={place}
+                className={place === state.owner ? "on" : ""}
+                onClick={() => {
+                  setState(null)
+                  setInto(place)
+                }}
+              >
+                {place}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {error ? (
           <p className="bad">{error}</p>
         ) : !state ? (
@@ -181,6 +200,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
             </a>
           </div>
         )}
+        </div>
       </li>
       {state?.status === "ready" ? <Connect owner={state.owner} name={state.name} change={change} /> : (
         <li className="later">

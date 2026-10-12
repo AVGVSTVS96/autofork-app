@@ -28,6 +28,7 @@ export const ForkState = Schema.Struct({
   name: Schema.String,
   status: Schema.Literals(["ready", "fork", "grant"]),
   link: Schema.NullOr(Schema.String),
+  places: Schema.Array(Schema.String),
 })
 export type ForkState = typeof ForkState.Type
 
@@ -79,7 +80,7 @@ export const AppGroup = HttpApiGroup.make("app")
     HttpApiEndpoint.get("me", "/api/me", { success: Schema.NullOr(Me) }),
     HttpApiEndpoint.post("signOut", "/api/signout"),
     HttpApiEndpoint.post("prepare", "/api/forks", {
-      payload: Schema.Struct({ owner: Schema.String, name: Schema.String }),
+      payload: Schema.Struct({ owner: Schema.String, name: Schema.String, into: Schema.optional(Schema.String) }),
       success: ForkState,
       error: [Problem, SignedOut],
     }),

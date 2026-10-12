@@ -15,6 +15,7 @@ type GitHubRepo = {
   fork: boolean
   private: boolean
   parent?: { full_name: string }
+  permissions?: { admin: boolean; push: boolean }
 }
 
 const toRepo = (repo: GitHubRepo): Repo => ({
@@ -119,6 +120,13 @@ const slug = (change: string) =>
     .slice(0, 48)
     .replace(/-+$/, "") || "change"
 
+const freshId = (entries: ReadonlyArray<{ name: string }>, change: string) => {
+  const taken = new Set(entries.map((entry) => entry.name))
+  let id = slug(change)
+  for (let n = 2; taken.has(id); n++) id = `${slug(change)}-${n}`
+  return id
+}
+
 const patchDoc = (change: string) => `${change.trim().replace(/^\w/, (first) => first.toUpperCase())}\n`
 
 const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
@@ -126,25 +134,34 @@ const listDir = (token: GitHub.Token, owner: string, name: string, path: string)
     Effect.catchIf(GitHub.missing, () => Effect.succeed([])),
   )
 
-const findFork = (user: User, upstream: GitHubRepo) =>
+const findFork = (user: User, upstream: GitHubRepo, into: string) =>
   Effect.gen(function* () {
-    const created = yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true }).pipe(
+    const target = into === user.login ? {} : { organization: into }
+    const created = yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true, ...target }).pipe(
       Effect.map((fork) => fork as GitHubRepo | null),
       Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
     )
     if (created) return created
-    return yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${user.login}/${upstream.name}`).pipe(
+    return yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${into}/${upstream.name}`).pipe(
       Effect.map((repo) => (repo.parent?.full_name === upstream.full_name ? repo : null)),
       Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
     )
   })
 
-const installationPage = (user: User) =>
-  GitHub.request<{ installations: { id: number; account: { id: number } }[] }>(user.token, "GET", "/user/installations").pipe(
-    Effect.map(({ installations }) => installations.find((installation) => installation.account.id === user.id)),
-    Effect.map((installation) => `https://github.com/settings/installations${installation ? `/${installation.id}` : ""}`),
-    Effect.orElseSucceed(() => "https://github.com/settings/installations"),
+type Installation = { id: number; account: { login: string; type: string } }
+
+const installations = (user: User) =>
+  GitHub.request<{ installations: Installation[] }>(user.token, "GET", "/user/installations").pipe(
+    Effect.map(({ installations }) => installations),
+    Effect.orElseSucceed((): Installation[] => []),
   )
+
+const accessPage = (installation: Installation | undefined) =>
+  !installation
+    ? "https://github.com/settings/installations"
+    : installation.account.type === "Organization"
+      ? `https://github.com/organizations/${installation.account.login}/settings/installations/${installation.id}`
+      : `https://github.com/settings/installations/${installation.id}`
 
 const reachable = (user: User, owner: string, name: string) =>
   GitHub.request(user.token, "GET", `/repos/${owner}/${name}/actions/secrets/public-key`).pipe(
@@ -152,16 +169,19 @@ const reachable = (user: User, owner: string, name: string) =>
     Effect.catch(() => Effect.succeed(false)),
   )
 
-export const prepare = (user: User, owner: string, name: string) =>
+export const prepare = (user: User, owner: string, name: string, into: string | undefined) =>
   Effect.gen(function* () {
+    const installed = yield* installations(user)
+    const places = [user.login, ...installed.filter((each) => each.account.type === "Organization").map((each) => each.account.login)]
+    const place = into && places.includes(into) ? into : user.login
     const upstream = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
       Effect.catch(problem(`Can't find github.com/${owner}/${name}.`)),
     )
     if (upstream.private) return yield* new Problem({ message: "autofork works with public repos." })
-    if (upstream.owner.login === user.login) return yield* new Problem({ message: "That repo is already yours. Name the repo you'd fork." })
-    const fork = yield* findFork(user, upstream).pipe(Effect.catch(problem("GitHub couldn't make the fork. Try again in a moment.")))
+    if (upstream.owner.login === place) return yield* new Problem({ message: "That repo is already yours. Name the repo you'd fork." })
+    const fork = yield* findFork(user, upstream, place).pipe(Effect.catch(problem("GitHub couldn't make the fork. Try again in a moment.")))
     if (!fork) {
-      return { owner: user.login, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork` } satisfies ForkState
+      return { owner: place, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork`, places } satisfies ForkState
     }
     const fresh = Date.now() - Date.parse(fork.created_at) < 120_000
     const ready = yield* reachable(user, fork.owner.login, fork.name).pipe(
@@ -173,7 +193,8 @@ export const prepare = (user: User, owner: string, name: string) =>
       owner: fork.owner.login,
       name: fork.name,
       status: ready ? "ready" : "grant",
-      link: ready ? null : yield* installationPage(user),
+      link: ready ? null : accessPage(installed.find((each) => each.account.login === fork.owner.login)),
+      places,
     } satisfies ForkState
   })
 
@@ -205,7 +226,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
   Effect.gen(function* () {
     if (!change.trim()) return yield* new Problem({ message: "Say what you'd change." })
     const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`).pipe(Effect.retry(retrying))
-    if (owner !== user.login) return yield* new Problem({ message: "That fork isn't yours." })
+    if (!repo.permissions?.admin) return yield* new Problem({ message: "That fork isn't yours." })
     const branch = repo.default_branch
     yield* GitHub.request(user.token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`).pipe(Effect.retry(retrying))
 
@@ -215,9 +236,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
 
     const control = yield* listDir(user.token, owner, name, ".autofork")
     const managed = control.some((entry) => entry.name === "config.json")
-    const ids = new Set(control.filter((entry) => entry.type === "dir").map((entry) => entry.name))
-    let id = slug(change)
-    for (let n = 2; ids.has(id); n++) id = `${slug(change)}-${n}`
+    const id = freshId(control, change)
 
     const files: GitHub.File[] = [{ path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) }]
     const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
@@ -255,12 +274,10 @@ const kickOff = (token: string, owner: string, name: string, branch: string, sha
 
 export const addChange = (user: User, owner: string, name: string, change: string) =>
   Effect.gen(function* () {
-    if (owner !== user.login) return yield* new Problem({ message: "That fork isn't yours." })
     if (!change.trim()) return yield* new Problem({ message: "Say what you'd change." })
     const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
-    const ids = new Set((yield* listDir(user.token, owner, name, ".autofork")).map((entry) => entry.name))
-    let id = slug(change)
-    for (let n = 2; ids.has(id); n++) id = `${slug(change)}-${n}`
+    if (!repo.permissions?.push) return yield* new Problem({ message: "That fork isn't yours." })
+    const id = freshId(yield* listDir(user.token, owner, name, ".autofork"), change)
     const sha = yield* GitHub.commit(user.token, owner, name, repo.default_branch, `autofork: ${change.trim()}`, [
       { path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) },
     ])
@@ -342,6 +359,12 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
       Effect.map(({ secrets }) => new Set(secrets.map((secret) => secret.name))),
       Effect.orElseSucceed(() => new Set<string>()),
     )
+    const yours = viewer
+      ? yield* GitHub.request<GitHubRepo>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
+          Effect.map((seen) => !!seen.permissions?.push),
+          Effect.orElseSucceed(() => false),
+        )
+      : false
     const agent: Agent | null = secrets.has(SECRETS.claude) ? "claude" : secrets.has(SECRETS.chatgpt) ? "chatgpt" : null
     return {
       owner: repo.owner.login,
@@ -350,6 +373,6 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
       agent,
       changes,
       run: yield* latestRun(token, owner, name, (id) => changes.find((change) => change.id === id)?.text ?? id),
-      yours: viewer?.login === repo.owner.login,
+      yours,
     }
   })
