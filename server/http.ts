@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as HttpRouter from "effect/http/HttpRouter"
@@ -131,9 +132,10 @@ const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>
     yield* saveCodexAuth(request.headers.authorization, body)
     return HttpServerResponse.empty({ status: 204 })
   }).pipe(
-    Effect.catch((error) =>
-      Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "failed" }, { status: 403 })),
-    ),
+    Effect.catchCause((cause) => {
+      const error = Cause.squash(cause)
+      return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "not allowed" }, { status: 403 }))
+    }),
   ),
 )
 
