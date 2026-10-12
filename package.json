@@ -1,0 +1,30 @@
+{
+  "name": "autofork-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/atom-react": "4.0.3",
+    "@effect/platform-browser": "4.0.3",
+    "@tanstack/react-router": "1.170.42",
+    "effect": "4.0.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tweetnacl": "1.0.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.7",
+    "@rolldown/plugin-babel": "^0.2.4",
+    "@types/node": "24",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "babel-plugin-react-compiler": "1.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}
