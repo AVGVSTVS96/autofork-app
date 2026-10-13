@@ -11,7 +11,7 @@ import { History, Meant, MineToday, Yours } from "./Sections.tsx"
 import { known, type Found } from "./known.ts"
 import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
 
-const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, repo, change }) => ({ app, change, icon: repo.split("/")[1]!.toLowerCase() }))
+const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, change }) => ({ app, change, avatar: known(app)!.repo.avatar }))
 
 const Headline = () => (
   <h1>

@@ -20,12 +20,20 @@ type GitHubRepo = {
   permissions?: { admin: boolean; push: boolean }
 }
 
+const KNOWN: Record<string, { verify: string; avatar?: string }> = {
+  "pingdotgg/t3code": {
+    verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck",
+    avatar: "/repos/t3code.svg",
+  },
+  "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
+}
+
 const toRepo = (repo: GitHubRepo): Repo => ({
   owner: repo.owner.login,
   name: repo.name,
   description: repo.description,
   stars: repo.stargazers_count,
-  avatar: repo.owner.avatar_url,
+  avatar: KNOWN[repo.full_name.toLowerCase()]?.avatar ?? repo.owner.avatar_url,
 })
 
 const problem = (message: string) => () => Effect.fail(new Problem({ message }))
@@ -73,10 +81,6 @@ export const resolve = (q: string, token: GitHub.Token) =>
     return { repo, change, others: exact ? [] : repos.slice(1, 4) }
   })
 
-const KNOWN: Record<string, { verify: string }> = {
-  "pingdotgg/t3code": { verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck" },
-  "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
-}
 
 const setupSteps = (files: ReadonlySet<string>, pnpmPinned: boolean) => {
   const node = files.has(".nvmrc")

@@ -72,7 +72,8 @@ const check = async () => {
   const known: Record<string, unknown> = {}
   for (const [index, { app, repo }] of after.examples.entries()) {
     const found = repos[index]
-    const avatar = `public/repos/${icon(repo)}.png`
+    const own = `public/repos/${icon(repo)}.svg`
+    const avatar = existsSync(own) ? own : `public/repos/${icon(repo)}.png`
     if (!existsSync(avatar)) {
       const image = await fetch(`https://github.com/${found.owner.login}.png?size=96`)
       writeFileSync(avatar, Buffer.from(await image.arrayBuffer()))

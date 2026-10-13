@@ -57,7 +57,7 @@ export const Footer = () => (
   </footer>
 )
 
-export type Example = { app: string; icon: string; change: string }
+export type Example = { app: string; avatar: string; change: string }
 
 const sentence = (example: Example) => `${example.app}, but ${example.change}`
 
@@ -162,7 +162,7 @@ export const Ask = ({
   const typed = app ? "" : text.trim()
   const example = typed.length >= 2 ? examples.find((one) => squash(one.app).startsWith(squash(typed))) : undefined
   const guess: Guess | undefined = example
-    ? { app: example.app, name: example.app, avatar: known(example.app)?.repo.avatar ?? `/repos/${example.icon}.png` }
+    ? { app: example.app, name: example.app, avatar: example.avatar }
     : found?.app === typed
       ? found
       : undefined
@@ -322,7 +322,7 @@ const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; l
     const item = (example: Example) => {
       const span = document.createElement("span")
       const img = document.createElement("img")
-      img.src = `/repos/${example.icon}.png`
+      img.src = example.avatar
       img.alt = ""
       span.append(img, example.app)
       return span

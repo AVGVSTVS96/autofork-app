@@ -614,4 +614,4 @@ nav .links > :last-child { view-transition-name: me; }
   .wait::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick { animation: none; }
   .ask, .btn, .pill, .target, .code, .paste, .segments button, .change textarea { transition: none !important; }
 }
-.asks img[src$=".svg"] { padding: 6px; background: var(--panel-2); }
+.asks img[src$="claude.svg"] { padding: 6px; background: var(--panel-2); }

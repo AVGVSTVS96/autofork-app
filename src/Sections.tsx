@@ -154,7 +154,7 @@ export const MineToday = () => (
         </span>
       </li>
       <li>
-        <img src="/repos/t3code.png" alt="" />
+        <img src="/repos/t3code.svg" alt="" />
         <span>
           <b>T3 Code</b>, but the window title shows the thread I'm on
         </span>
