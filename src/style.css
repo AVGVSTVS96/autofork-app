@@ -85,7 +85,7 @@ nav .links { align-items: center; }
 .ghost span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .hero h1 { margin: clamp(48px, 10vh, 112px) 0 0; font-size: clamp(50px, 8.4vw, 128px); line-height: .96; letter-spacing: -0.028em; font-weight: 800; }
-.hero h1 span { display: block; }
+.hero h1 > span { display: block; }
 .you { color: var(--you); }
 .sub { margin: 30px 0 34px; font-size: 22px; line-height: 1.4; color: var(--ink-2); max-width: 44ch; letter-spacing: -0.01em; text-wrap: balance; }
 .hero .ask { max-width: 720px; }
@@ -190,7 +190,7 @@ button:disabled { opacity: .4; cursor: default; }
 .fork, .start { max-width: 720px; margin: 0 auto; padding-bottom: 120px; }
 .fork { display: grid; gap: 20px; }
 .start h1 { margin: clamp(24px, 5vh, 48px) 0 24px; font-size: clamp(30px, 4.4vw, 40px); line-height: 1; letter-spacing: -0.025em; font-weight: 800; }
-.start h1 span { display: block; }
+.start h1 > span { display: block; }
 .fork-head { margin: clamp(24px, 6vh, 64px) 0 12px; }
 .fork-head h1 { font-size: clamp(40px, 6.4vw, 64px); line-height: 1; letter-spacing: -0.028em; font-weight: 800; overflow-wrap: anywhere; }
 .facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 16px; font-size: 15px; color: var(--ink-3); }
@@ -539,7 +539,27 @@ footer .links { display: flex; gap: 22px; }
   .t3-left .chip:nth-of-type(n+2), .t3-left .sep, .t3-right > .t3-icon { display: none; }
   .t3-panels { display: none; }
 }
+/* Fork it: the headline and composer carry over to the flow page and back while the rest crossfades */
+.make { width: fit-content; view-transition-name: make; }
+.keep, .updates { display: inline-block; }
+.keep { view-transition-name: keep; }
+.updates { view-transition-name: updates; }
+.hero .ask, .start .ask { view-transition-name: ask; }
+.hero .ask > button, .start .ask > button { view-transition-name: ask-go; }
+nav .brand { view-transition-name: brand; }
+nav .links > :last-child { view-transition-name: me; }
+::view-transition-group(*) { animation-duration: 520ms; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+@media (max-width: 860px) {
+  ::view-transition-group(updates) { animation-delay: 160ms; }
+  :active-view-transition-type(back)::view-transition-group(updates) { animation-delay: 0ms; animation-duration: 360ms; }
+}
+::view-transition-old(root) { animation: 200ms ease-out both fade-out; }
+::view-transition-new(root) { animation: 360ms ease-out 100ms both fade-in; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes fade-in { from { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   html { scroll-behavior: auto; }
   .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
   .wait::before, .item.now > i, .caret { animation: none; }

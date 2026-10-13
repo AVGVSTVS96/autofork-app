@@ -22,9 +22,11 @@ const EXAMPLES: ReadonlyArray<Example> = [
 
 const Headline = () => (
   <h1>
-    <span data-fork>Make it yours.</span>
+    <span className="make" data-fork>
+      Make it yours.
+    </span>
     <span className="you" data-you>
-      Keep their updates.
+      <span className="keep">Keep their</span> <span className="updates">updates.</span>
     </span>
   </h1>
 )

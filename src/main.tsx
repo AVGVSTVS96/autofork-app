@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from "@tanstack/react-router"
+import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider, type ParsedLocation } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { ForkPage } from "./ForkPage.tsx"
@@ -33,7 +33,14 @@ const fork = createRoute({
   },
 })
 
-const router = createRouter({ routeTree: root.addChildren([home, fork]) })
+const asking = (location: ParsedLocation) => "q" in location.search
+
+const forkIt = ({ fromLocation: from, toLocation: to }: { fromLocation?: ParsedLocation; toLocation: ParsedLocation }) =>
+  from?.pathname === "/" && to.pathname === "/" && asking(from) !== asking(to) && !matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? [asking(to) ? "fork-it" : "back"]
+    : false
+
+const router = createRouter({ routeTree: root.addChildren([home, fork]), defaultViewTransition: { types: forkIt } })
 
 declare module "@tanstack/react-router" {
   interface Register {
