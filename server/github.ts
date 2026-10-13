@@ -169,11 +169,34 @@ export const exchange = (code: string) =>
     return { user: { login: user.login, id: user.id, avatar: user.avatar_url, ...tokens } satisfies Session.User, installed }
   })
 
+type Tokens = Effect.Success<ReturnType<typeof oauth>>
+
+/* GitHub rotates the refresh token each time it's spent, so requests that arrive together with the same
+   cookie share one renewal instead of the second spending a dead token and signing the user out. */
+const renewals = new Map<string, { at: number; renewed: Promise<Exit.Exit<Tokens, GitHubError>> }>()
+
+const renew = (refresh: string) =>
+  Effect.gen(function* () {
+    const env = yield* Env
+    for (const [key, { at }] of renewals) if (at < Date.now() - 600_000) renewals.delete(key)
+    const renewal = renewals.get(refresh) ?? {
+      at: Date.now(),
+      renewed: Effect.runPromiseExit(oauth({ grant_type: "refresh_token", refresh_token: refresh }).pipe(Effect.provideService(Env, env))),
+    }
+    renewals.set(refresh, renewal)
+    const renewed = yield* Effect.promise(() => renewal.renewed)
+    if (Exit.isFailure(renewed)) renewals.delete(refresh)
+    return yield* renewed
+  })
+
 export const signedIn = Effect.gen(function* () {
   const user = yield* Session.user
   if (user.expires > Date.now() + 60_000) return user
-  const tokens = yield* oauth({ grant_type: "refresh_token", refresh_token: user.refresh }).pipe(
-    Effect.catchTag("GitHubError", () => Effect.andThen(Session.update(({ user: _, ...rest }) => rest), Effect.fail(new SignedOut()))),
+  const tokens = yield* renew(user.refresh).pipe(
+    Effect.catchIf(
+      (error) => error.status === 401,
+      () => Effect.andThen(Session.update(({ user: _, ...rest }) => rest), Effect.fail(new SignedOut())),
+    ),
   )
   const fresh = { ...user, ...tokens }
   yield* Session.update((session) => ({ ...session, user: fresh }))
