@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
-import { type Agent, type Change, type ForkState, Problem, type Repo, type Run } from "../shared/api.ts"
+import { type Agent, type Change, type ForkState, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -30,9 +30,6 @@ const toRepo = (repo: GitHubRepo): Repo => ({
 
 const problem = (message: string) => () => Effect.fail(new Problem({ message }))
 
-const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "")
-
-const SPLIT = /^(.+?)(?:,\s*but\s+|\s+but\s+|\s*:\s+|\s+(?:—|–|-)\s+|\s+to\s+)(.+)$/i
 const GITHUB = /^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$/i
 
 const searched = new Map<string, { repos: Repo[]; at: number }>()
@@ -42,7 +39,7 @@ const search = (app: string, token: GitHub.Token) =>
     const key = squash(app)
     const hit = searched.get(key)
     if (hit && Date.now() - hit.at < 3_600_000) return hit.repos
-    const query = new URLSearchParams({ q: `${app.trim()} fork:false`, sort: "stars", per_page: "10" })
+    const query = new URLSearchParams({ q: `${app.trim()} fork:false is:public`, sort: "stars", per_page: "10" })
     const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(
       Effect.catch(problem("GitHub search is busy. Name the repo as owner/name instead.")),
     )
@@ -53,19 +50,19 @@ const search = (app: string, token: GitHub.Token) =>
 
 export const resolve = (q: string, token: GitHub.Token) =>
   Effect.gen(function* () {
-    const [, app = q, change = ""] = q.trim().match(SPLIT) ?? []
-    const named = app.trim().match(GITHUB)
+    const { app, change } = split(q)
+    const named = app.match(GITHUB)
     if (named) {
-      const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${named[1]}/${named[2]}`).pipe(
-        Effect.catch(problem(`There's no public repo at github.com/${named[1]}/${named[2]}.`)),
-      )
-      return { repo: toRepo(repo), change: change.trim(), others: [] }
+      const missing = problem(`There's no public repo at github.com/${named[1]}/${named[2]}.`)
+      const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${named[1]}/${named[2]}`).pipe(Effect.catch(missing))
+      if (repo.private) return yield* missing()
+      return { repo: toRepo(repo), change, others: [] }
     }
     const repos = yield* search(app, token)
     const exact = repos.find((repo) => squash(repo.name) === squash(app))
     const repo = exact ?? repos[0]
-    if (!repo) return yield* new Problem({ message: `No open source repo on GitHub matches "${app.trim()}". Try owner/name.` })
-    return { repo, change: change.trim(), others: exact ? [] : repos.slice(1, 4) }
+    if (!repo) return yield* new Problem({ message: `No open source repo on GitHub matches "${app}". Try owner/name.` })
+    return { repo, change, others: exact ? [] : repos.slice(1, 4) }
   })
 
 const KNOWN: Record<string, { verify: string }> = {

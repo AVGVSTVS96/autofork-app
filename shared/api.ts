@@ -7,6 +7,15 @@ export class Problem extends Schema.TaggedError<Problem>()("Problem", { message:
 
 export class SignedOut extends Schema.TaggedError<SignedOut>()("SignedOut", {}, { httpApiStatus: 401 }) {}
 
+const SPLIT = /^(.+?)(?:,\s*but\s+|\s+but\s+|\s*:\s+|\s+(?:—|–|-)\s+|\s+to\s+)(.+)$/i
+
+export const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "")
+
+export const split = (ask: string) => {
+  const [, app = ask, change = ""] = ask.trim().match(SPLIT) ?? []
+  return { app: app.trim(), change: change.trim() }
+}
+
 export const Repo = Schema.Struct({
   owner: Schema.String,
   name: Schema.String,
