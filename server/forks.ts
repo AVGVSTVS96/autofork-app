@@ -164,15 +164,15 @@ const listDir = (token: GitHub.Token, owner: string, name: string, path: string)
 
 const findFork = (user: User, upstream: GitHubRepo, into: string) =>
   Effect.gen(function* () {
-    const target = into === user.login ? {} : { organization: into }
-    const created = yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true, ...target }).pipe(
-      Effect.map((fork) => fork as GitHubRepo | null),
-      Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
-    )
-    if (created) return created
-    return yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${into}/${upstream.name}`).pipe(
+    const existing = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${into}/${upstream.name}`).pipe(
       Effect.map((repo) => (repo.parent?.full_name === upstream.full_name ? repo : null)),
       Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+    )
+    if (existing) return existing
+    const target = into === user.login ? {} : { organization: into }
+    return yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true, ...target }).pipe(
+      Effect.map((fork) => fork as GitHubRepo | null),
+      Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
     )
   })
 
@@ -211,7 +211,9 @@ export const prepare = (user: User, owner: string, name: string, into: string | 
       const { appSlug } = yield* Env
       return { owner: place, name: upstream.name, status: "install", link: `https://github.com/apps/${appSlug}/installations/new`, places } satisfies ForkState
     }
-    const fork = yield* findFork(user, upstream, place).pipe(Effect.catch(problem("GitHub couldn't make the fork. Try again in a moment.")))
+    const fork = yield* findFork(user, upstream, place).pipe(
+      Effect.catchIf((error) => !GitHub.busy(error), problem("GitHub couldn't make the fork. Try again in a moment.")),
+    )
     if (!fork) {
       return { owner: place, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork`, places } satisfies ForkState
     }

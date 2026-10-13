@@ -248,24 +248,40 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
 
   useEffect(() => {
     let live = true
+    let checking = false
+    let ready = false
+    let last = 0
     let timer: ReturnType<typeof setTimeout>
     const check = async () => {
+      if (checking || ready || Date.now() - last < 3000) return
+      checking = true
+      clearTimeout(timer)
       const exit = await prepare({ payload: { owner: repo.owner, name: repo.name, into } })
+      checking = false
+      last = Date.now()
       if (!live) return
       try {
         const next = client.unwrap(exit)
+        ready = next.status === "ready"
         setState(next)
         setError(null)
-        if (next.status !== "ready") timer = setTimeout(check, 4000)
+        if ((next.status === "grant" || next.status === "install") && document.visibilityState === "visible") timer = setTimeout(check, 15000)
       } catch (failure) {
         setError((failure as Error).message)
         if ((failure as Error).message.startsWith("Your GitHub sign-in")) meRefresh()
       }
     }
+    const back = () => {
+      if (document.visibilityState === "visible") void check()
+    }
     void check()
+    window.addEventListener("focus", back)
+    document.addEventListener("visibilitychange", back)
     return () => {
       live = false
       clearTimeout(timer)
+      window.removeEventListener("focus", back)
+      document.removeEventListener("visibilitychange", back)
     }
   }, [repo.owner, repo.name, into])
 
