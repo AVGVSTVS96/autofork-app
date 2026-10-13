@@ -1,5 +1,6 @@
 import { useState } from "react"
 import facts from "./facts.json"
+import { repoIcon } from "./known.ts"
 
 const [t3fork] = facts.forks
 const install = `npx skills add ${facts.owner}/autofork`
@@ -130,37 +131,37 @@ export const MineToday = () => (
     <div className="t3" data-t3 />
     <ul className="asks">
       <li>
-        <img src="/repos/expo-gpt-live.png" alt="" />
+        <img src={repoIcon("davidmokos/expo-gpt-live")} alt="" />
         <span>
           <b>expo-gpt-live</b>, an Expo voice app template, but it calls my assistant, and I maintain it now
         </span>
       </li>
       <li>
-        <img src="/repos/herdr.png" alt="" />
+        <img src={repoIcon("herdrdev/herdr")} alt="" />
         <span>
           <b>herdr</b>, but every pane shows its ID on its border
         </span>
       </li>
       <li>
-        <img src="/repos/buzz.png" alt="" />
+        <img src={repoIcon("block/buzz")} alt="" />
         <span>
           <b>Buzz</b>, but my agents share files with me, and I can suggest edits
         </span>
       </li>
       <li>
-        <img src="/repos/claude.svg" alt="" />
+        <img src={repoIcon("anthropics/claude-plugins-official")} alt="" />
         <span>
           <b>Claude Code's Telegram plugin</b>, but one bot runs many sessions, one for each forum topic
         </span>
       </li>
       <li>
-        <img src="/repos/t3code.svg" alt="" />
+        <img src={repoIcon("pingdotgg/t3code")} alt="" />
         <span>
           <b>T3 Code</b>, but the window title shows the thread I'm on
         </span>
       </li>
       <li>
-        <img src="/icon-512.png" alt="" />
+        <img src={repoIcon("AVGVSTVS96/autofork-app")} alt="" />
         <span>
           <b>autofork.com</b>, but its examples are real open requests, refreshed every 4 days
         </span>

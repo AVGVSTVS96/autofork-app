@@ -8,7 +8,7 @@ import type { User } from "./session.ts"
 type GitHubRepo = {
   name: string
   full_name: string
-  owner: { login: string; avatar_url: string }
+  owner: { login: string }
   description: string | null
   stargazers_count: number
   default_branch: string
@@ -20,11 +20,8 @@ type GitHubRepo = {
   permissions?: { admin: boolean; push: boolean }
 }
 
-const KNOWN: Record<string, { verify: string; avatar?: string }> = {
-  "pingdotgg/t3code": {
-    verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck",
-    avatar: "/repos/t3code.svg",
-  },
+const KNOWN: Record<string, { verify: string }> = {
+  "pingdotgg/t3code": { verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck" },
   "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
 }
 
@@ -33,7 +30,7 @@ const toRepo = (repo: GitHubRepo): Repo => ({
   name: repo.name,
   description: repo.description,
   stars: repo.stargazers_count,
-  avatar: KNOWN[repo.full_name.toLowerCase()]?.avatar ?? repo.owner.avatar_url,
+  avatar: `/api/icon/${repo.owner.login}/${repo.name}`,
 })
 
 const problem = (message: string) => () => Effect.fail(new Problem({ message }))

@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process"
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import * as Effect from "effect/Effect"
+import { detect } from "../../server/icon.ts"
 import { squash } from "../../shared/api.ts"
 
 type Example = { app: string; repo: string; change: string; issue?: number }
@@ -11,6 +13,7 @@ const EVERY = 4
 const LONGEST = 40
 
 const today = new Date().toISOString().slice(0, 10)
+const ICONS = "public/repos"
 const icon = (repo: string) => repo.split("/")[1]!.toLowerCase()
 const read = (text: string): Examples => JSON.parse(text)
 const output = (key: string, value: string) => process.env.GITHUB_OUTPUT && appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`)
@@ -21,6 +24,20 @@ const github = async (path: string) => {
     headers: { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
   })
   return response.ok ? response.json() : undefined
+}
+
+/* The icon T3 Code would show for the repo, as server/icon.ts detects it for any repo, saved next to the site
+   so the examples never wait on GitHub; a repo without one gets its owner's avatar */
+const repoIcon = async (repo: string) => {
+  const [owner, name] = repo.split("/") as [string, string]
+  const found = await Effect.runPromise(detect(process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN, owner, name))
+  if (!found) throw new Error(`${repo} isn't a public GitHub repo`)
+  const bytes = found.icon?.bytes ?? new Uint8Array(await (await fetch(found.avatar)).arrayBuffer())
+  const file = `${icon(repo)}.${found.icon?.extension ?? "png"}`
+  for (const old of readdirSync(ICONS)) if (old !== file && old.slice(0, old.lastIndexOf(".")) === icon(repo)) rmSync(`${ICONS}/${old}`)
+  writeFileSync(`${ICONS}/${file}`, bytes)
+  console.log(`${repo}: ${found.icon ? found.icon.path : "no icon of its own, so its owner's avatar"}`)
+  return `/repos/${file}`
 }
 
 const due = () => {
@@ -72,14 +89,9 @@ const check = async () => {
   const known: Record<string, unknown> = {}
   for (const [index, { app, repo }] of after.examples.entries()) {
     const found = repos[index]
-    const own = `public/repos/${icon(repo)}.svg`
-    const avatar = existsSync(own) ? own : `public/repos/${icon(repo)}.png`
-    if (!existsSync(avatar)) {
-      const image = await fetch(`https://github.com/${found.owner.login}.png?size=96`)
-      writeFileSync(avatar, Buffer.from(await image.arrayBuffer()))
-    }
+    const image = await repoIcon(found.full_name)
     known[squash(app)] = {
-      repo: { owner: found.owner.login, name: found.name, description: found.description, stars: found.stargazers_count, avatar: avatar.slice("public".length) },
+      repo: { owner: found.owner.login, name: found.name, description: found.description, stars: found.stargazers_count, avatar: image },
       others: [],
     }
   }

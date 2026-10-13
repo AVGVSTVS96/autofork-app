@@ -12,6 +12,7 @@ import * as Agents from "./agents.ts"
 import * as Env from "./env.ts"
 import * as Forks from "./forks.ts"
 import * as GitHub from "./github.ts"
+import * as Icon from "./icon.ts"
 import { saveCodexAuth } from "./oidc.ts"
 import * as Session from "./session.ts"
 
@@ -150,7 +151,34 @@ const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>
   ),
 )
 
-const Routes = Layer.mergeAll(signIn, callback, codexAuth)
+const DAY = "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
+const MINUTE = "public, max-age=60, s-maxage=60"
+
+/* A repo's own icon, or its owner's avatar when it has none. With ?fallback=none it answers 404 instead, so T3 Code's window can draw
+   its monogram the way T3 Code does. An SVG from someone's repo is sandboxed in case anyone opens it directly. */
+const icon = HttpRouter.add("GET", "/api/icon/:owner/:name", (request) =>
+  Effect.gen(function* () {
+    const { owner = "", name = "" } = yield* HttpRouter.params
+    const avatar = params(request).get("fallback") !== "none"
+    const found = yield* Icon.lookup(owner, name).pipe(Effect.orElseSucceed(() => null))
+    const cache = found ? DAY : MINUTE
+    if (found?.icon) {
+      return HttpServerResponse.uint8Array(found.icon.bytes, {
+        contentType: found.icon.type,
+        headers: {
+          "cache-control": cache,
+          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+          "x-content-type-options": "nosniff",
+        },
+      })
+    }
+    if (!avatar) return HttpServerResponse.empty({ status: 404, headers: { "cache-control": cache } })
+    const fallback = found?.avatar ?? `https://github.com/${encodeURIComponent(owner)}.png?size=96`
+    return HttpServerResponse.redirect(fallback, { headers: { "cache-control": cache } })
+  }),
+)
+
+const Routes = Layer.mergeAll(signIn, callback, codexAuth, icon)
 
 export const app = HttpRouter.toWebHandler(
   Layer.mergeAll(HttpApiBuilder.layer(Api).pipe(Layer.provide(AppLive)), Routes).pipe(

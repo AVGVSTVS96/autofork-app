@@ -4,6 +4,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
+import { repoIcon } from "./known.ts"
 import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon } from "./ui.tsx"
 
 export const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
@@ -71,7 +72,7 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
           </span>
           {fork.upstream ? (
             <span>
-              Keeps up with{" "}
+              <img src={repoIcon(fork.upstream)} alt="" /> Keeps up with{" "}
               <a href={`https://github.com/${fork.upstream}`} target="_blank" rel="noreferrer">
                 {fork.upstream}
               </a>

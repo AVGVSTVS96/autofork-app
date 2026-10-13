@@ -1,4 +1,5 @@
 import { claudePath } from "./claude-path.ts"
+import { savedIcon } from "./known.ts"
 
 /* T3 Code as it looks today, transcribed from its source (apps/web/src), with my context-usage change in the composer.
    The threads switch, and the context button toggles compact-before-send like the real one. */
@@ -35,8 +36,8 @@ const I = {
 const claude = `<svg class="claude" viewBox="0 0 256 257" aria-hidden="true"><path d="${claudePath}"/></svg>`
 const t3 = `<svg class="t3-mark" viewBox="15.5309 37 94.3941 56.96" aria-hidden="true"><path d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"/></svg>`
 
-/* T3 Code's project badge: its monogram and color come from the project's name (projectIdentity.ts),
-   unless the project has its own icon set, like my autofork. Colors are Tailwind's -600 in light, -400 in dark. */
+/* T3 Code's project badge (ProjectFavicon.tsx): an icon set for the project, like my autofork's, else the icon found in its repo,
+   else a monogram and color from the project's name (projectIdentity.ts). Colors are Tailwind's -600 in light, -400 in dark. */
 const hues: Record<string, [string, string]> = {
   gray: ["44.6% 0.03 256.802", "70.7% 0.022 261.325"],
   red: ["57.7% 0.245 27.325", "70.4% 0.191 22.216"],
@@ -70,10 +71,20 @@ const identity = (project: string) => {
   return { text: `${glyphs[0]}${second}`.toUpperCase(), color: names[i]! }
 }
 
+const repos: Record<string, string> = {
+  t3code: "pingdotgg/t3code",
+  "hex-voice": "AVGVSTVS96/hex-voice",
+  autofork: "AVGVSTVS96/autofork-app",
+  "react-shiki": "AVGVSTVS96/react-shiki",
+}
+const favicons = new Map<string, string>()
+
 const mono = (project: string) => {
+  const favicon = favicons.get(project)
+  if (favicon) return `<img class="favicon" src="${favicon}" alt="" data-project="${project}">`
   const { text, color } = identity(project)
   const [light, dark] = hues[color]!
-  return `<svg class="mono" viewBox="0 0 16 16" style="color:light-dark(oklch(${light}),oklch(${dark}))" aria-hidden="true"><text x="8" y="10.8" text-anchor="middle" font-size="8.25" textLength="${text.length === 1 ? 6 : 12}" lengthAdjust="spacingAndGlyphs">${text}</text></svg>`
+  return `<svg class="mono" data-project="${project}" viewBox="0 0 16 16" style="color:light-dark(oklch(${light}),oklch(${dark}))" aria-hidden="true"><text x="8" y="10.8" text-anchor="middle" font-size="8.25" textLength="${text.length === 1 ? 6 : 12}" lengthAdjust="spacingAndGlyphs">${text}</text></svg>`
 }
 
 type Thread = {
@@ -251,4 +262,14 @@ export function mount(root: HTMLElement | null) {
     paintCtx()
   })
   show(0)
+
+  for (const [project, repo] of Object.entries(repos)) {
+    if (ownIcons[project]) continue
+    const icon = new Image()
+    icon.onload = () => {
+      favicons.set(project, icon.src)
+      for (const badge of root.querySelectorAll(`[data-project="${project}"]`)) badge.outerHTML = mono(project)
+    }
+    icon.src = savedIcon(repo) ?? `/api/icon/${repo}?fallback=none`
+  }
 }
