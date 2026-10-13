@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import { Problem } from "../shared/api.ts"
 import * as GitHub from "./github.ts"
@@ -57,6 +58,12 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
       Effect.mapError(() => new Problem({ message: "that isn't a Codex sign-in" })),
     )
     const [owner = "", name = ""] = claims.repository.split("/")
-    const token = yield* GitHub.repoToken(owner, name)
-    yield* GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)
+    yield* GitHub.repoToken(owner, name).pipe(
+      Effect.flatMap((token) => GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)),
+      Effect.retry({
+        while: (error) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
+        schedule: Schedule.exponential("1 second"),
+        times: 3,
+      }),
+    )
   })

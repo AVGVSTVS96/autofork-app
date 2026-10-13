@@ -17,8 +17,9 @@ import * as Session from "./session.ts"
 
 const friendly = (error: GitHub.GitHubError) =>
   new Problem({
-    message:
-      error.status === 403 || error.status === 404
+    message: GitHub.busy(error)
+      ? "GitHub is rate-limiting autofork right now. Try again in a minute."
+      : error.status === 403 || error.status === 404
         ? `GitHub said no: ${error.message}. autofork may not have access to that repo yet.`
         : `GitHub had a problem: ${error.message}`,
   })
