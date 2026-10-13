@@ -15,7 +15,7 @@ type GitHubRepo = {
   created_at: string
   fork: boolean
   private: boolean
-  parent?: { full_name: string }
+  parent?: { full_name: string; description: string | null }
   permissions?: { admin: boolean; push: boolean }
 }
 
@@ -132,6 +132,14 @@ const freshId = (entries: ReadonlyArray<{ name: string }>, change: string) => {
 
 const patchDoc = (change: string) => `${change.trim().replace(/^\w/, (first) => first.toUpperCase())}\n`
 
+const describe = (token: GitHub.Token, repo: GitHubRepo) =>
+  Effect.gen(function* () {
+    const owner = yield* GitHub.request<{ login: string; name: string | null; type: string }>(token, "GET", `/users/${repo.owner.login}`)
+    const who = (owner.type === "User" ? owner.name?.trim().split(/\s+/)[0] : owner.name?.trim()) || owner.login
+    const description = [`${who}'s autofork`, repo.parent?.description].filter(Boolean).join(" · ")
+    if (description !== repo.description) yield* GitHub.request(token, "PATCH", `/repos/${repo.full_name}`, { description })
+  }).pipe(Effect.ignore)
+
 const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
   GitHub.request<{ name: string; type: string; size: number; sha: string }[]>(token, "GET", `/repos/${owner}/${name}/contents/${path}`).pipe(
     Effect.catchIf(GitHub.missing, () => Effect.succeed([])),
@@ -237,6 +245,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
     yield* GitHub.deleteSecret(user.token, owner, name, SECRETS[agent === "claude" ? "chatgpt" : "claude"])
     yield* GitHub.request(user.token, "PUT", `/repos/${owner}/${name}/actions/permissions`, { enabled: true, allowed_actions: "all" })
     if (!repo.has_issues) yield* GitHub.request(user.token, "PATCH", `/repos/${owner}/${name}`, { has_issues: true }).pipe(Effect.ignore)
+    yield* describe(user.token, repo)
 
     const control = yield* listDir(user.token, owner, name, ".autofork")
     const managed = control.some((entry) => entry.name === "config.json")
@@ -281,6 +290,7 @@ export const addChange = (user: User, owner: string, name: string, change: strin
     if (!change.trim()) return yield* new Problem({ message: "Say what you'd change." })
     const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
     if (!repo.permissions?.push) return yield* new Problem({ message: "That fork isn't yours." })
+    yield* describe(user.token, repo)
     const id = freshId(yield* listDir(user.token, owner, name, ".autofork"), change)
     const sha = yield* GitHub.commit(user.token, owner, name, repo.default_branch, `autofork: ${change.trim()}`, [
       { path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) },
