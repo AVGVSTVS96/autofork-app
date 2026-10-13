@@ -257,8 +257,13 @@ export const prepare = (user: User, owner: string, name: string, into: string | 
 const retrying = { schedule: Schedule.spaced("2 seconds"), times: 15 }
 
 const releasesExist = (token: GitHub.Token, repo: string) =>
-  GitHub.request<{ name: string }[]>(token, "GET", `/repos/${repo}/tags?per_page=100`).pipe(
-    Effect.map((tags) => tags.some((tag) => !tag.name.includes("-"))),
+  GitHub.request(token, "GET", `/repos/${repo}/releases/latest`).pipe(
+    Effect.as(true),
+    Effect.catch(() =>
+      GitHub.request<{ name: string }[]>(token, "GET", `/repos/${repo}/tags?per_page=100`).pipe(
+        Effect.map((tags) => tags.some((tag) => !tag.name.includes("-"))),
+      ),
+    ),
     Effect.orElseSucceed(() => false),
   )
 
