@@ -20,17 +20,27 @@ const EXAMPLES: ReadonlyArray<Example> = [
   { app: "UTM", icon: "utm", change: "list running VMs in the menu bar" },
 ]
 
-export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
+const Headline = () => (
+  <h1>
+    <span data-fork>Make it yours.</span>
+    <span className="you" data-you>
+      Keep their updates.
+    </span>
+  </h1>
+)
+
+const useAsk = () => {
   const navigate = useNavigate()
-  const [draft, setDraft] = useState(q)
-  const [shown, setShown] = useState(q)
-  if (q !== shown) {
-    setShown(q)
-    setDraft(q)
-  }
+  return (text: string, agent: Agent | undefined) => void navigate({ to: "/", search: { q: text, agent } })
+}
+
+export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => (q ? <Start q={q} agent={agent} /> : <Landing />)
+
+const Landing = () => {
+  const ask = useAsk()
+  const [draft, setDraft] = useState("")
   const page = useRef<HTMLDivElement>(null)
   useEffect(() => start(page.current!), [])
-  const submit = (text: string, via?: string) => void navigate({ to: "/", search: { q: text, agent: isAgent(via) ? via : undefined } })
   return (
     <div className="page" ref={page}>
       <svg className="graph" aria-hidden="true" />
@@ -39,36 +49,61 @@ export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
         <a href="#self">Run it yourself</a>
         <a href={facts.repo}>GitHub</a>
       </Nav>
-      <header className={q ? "hero asked" : "hero"}>
-        <h1>
-          <span data-fork>Make it yours.</span>
-          <span className="you" data-you>
-            Keep their updates.
-          </span>
-        </h1>
-        {q ? null : <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>}
-        <Composer id="ask" value={draft} onChange={setDraft} onSubmit={submit} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
-        {q ? (
-          <Flow key={q} q={q} agent={agent} />
-        ) : (
-          <>
-            <div className="signin">
-              <button type="submit" form="ask" value="chatgpt" className="btn">
-                <OpenAIIcon /> Continue with ChatGPT
-              </button>
-              <button type="submit" form="ask" value="claude" className="btn">
-                <ClaudeIcon /> Continue with Claude
-              </button>
-            </div>
-            <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
-          </>
-        )}
+      <header className="hero">
+        <Headline />
+        <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>
+        <Composer
+          id="ask"
+          value={draft}
+          onChange={setDraft}
+          onSubmit={(text, via) => ask(text, isAgent(via) ? via : undefined)}
+          examples={EXAMPLES}
+          label="An open source app and what you'd change"
+          action="Fork it"
+        />
+        <div className="signin">
+          <button type="submit" form="ask" value="chatgpt" className="btn">
+            <OpenAIIcon />
+            <span>
+              <span className="via">Continue with </span>
+              ChatGPT
+            </span>
+          </button>
+          <button type="submit" form="ask" value="claude" className="btn">
+            <ClaudeIcon />
+            <span>
+              <span className="via">Continue with </span>
+              Claude
+            </span>
+          </button>
+        </div>
+        <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
       </header>
       <Meant />
       <MineToday />
       <Yours />
       <History />
       <Footer />
+    </div>
+  )
+}
+
+const Start = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
+  const ask = useAsk()
+  const [draft, setDraft] = useState(q)
+  const [shown, setShown] = useState(q)
+  if (q !== shown) {
+    setShown(q)
+    setDraft(q)
+  }
+  return (
+    <div className="page bare">
+      <Nav />
+      <main className="start">
+        <Headline />
+        <Composer value={draft} onChange={setDraft} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
+        <Flow key={q} q={q} agent={agent} />
+      </main>
     </div>
   )
 }

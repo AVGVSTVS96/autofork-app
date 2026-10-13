@@ -88,8 +88,7 @@ nav .links { align-items: center; }
 .hero h1 span { display: block; }
 .you { color: var(--you); }
 .sub { margin: 30px 0 34px; font-size: 22px; line-height: 1.4; color: var(--ink-2); max-width: 44ch; letter-spacing: -0.01em; text-wrap: balance; }
-.hero.asked h1 { margin: clamp(24px, 5vh, 48px) 0 24px; font-size: clamp(30px, 4.4vw, 40px); line-height: 1; letter-spacing: -0.025em; }
-.hero .ask, .hero .plan { max-width: 720px; }
+.hero .ask { max-width: 720px; }
 
 /* the composer: one rounded bar, its button nested at the same curve */
 .ask { --r: 20px; --in: 8px; display: flex; align-items: flex-end; gap: 10px; min-height: 68px; padding: var(--in); padding-left: 14px; background: var(--panel); border: 1px solid var(--hair-2); border-radius: var(--r); box-shadow: 0 1px 2px rgb(14 14 18 / .04), 0 8px 24px -12px rgb(14 14 18 / .12); transition: border-color .2s ease, box-shadow .2s ease; }
@@ -128,8 +127,8 @@ button:disabled { opacity: .4; cursor: default; }
 @media (hover: hover) {
   .btn.primary:hover, .ask button:hover:not(:disabled), .paste button:hover:not(:disabled) { box-shadow: 0 0 0 4px var(--you-soft); }
 }
-.note { margin: 14px 0 0; font-size: 15px; color: var(--ink-3); }
-.hero .note.wait, .hero .note.bad { margin-top: 28px; font-size: 17px; }
+.note { margin: 14px 0 0; font-size: 15px; color: var(--ink-3); text-wrap: balance; }
+.start .note.wait, .start .note.bad { margin-top: 28px; font-size: 17px; }
 
 /* the flow: the plan under the composer, then your fork's page */
 .bad { color: var(--del); }
@@ -188,7 +187,10 @@ button:disabled { opacity: .4; cursor: default; }
 
 .page.bare { padding-left: var(--gutter); }
 .page.bare > nav { margin-left: 0; }
-.fork { display: grid; gap: 20px; max-width: 720px; margin: 0 auto; padding-bottom: 120px; }
+.fork, .start { max-width: 720px; margin: 0 auto; padding-bottom: 120px; }
+.fork { display: grid; gap: 20px; }
+.start h1 { margin: clamp(24px, 5vh, 48px) 0 24px; font-size: clamp(30px, 4.4vw, 40px); line-height: 1; letter-spacing: -0.025em; font-weight: 800; }
+.start h1 span { display: block; }
 .fork-head { margin: clamp(24px, 6vh, 64px) 0 12px; }
 .fork-head h1 { font-size: clamp(40px, 6.4vw, 64px); line-height: 1; letter-spacing: -0.028em; font-weight: 800; overflow-wrap: anywhere; }
 .facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 16px; font-size: 15px; color: var(--ink-3); }
@@ -481,8 +483,8 @@ footer .links { display: flex; gap: 22px; }
   .ask { flex-wrap: wrap; padding: var(--in); gap: var(--in); }
   .field { flex-basis: 100%; min-height: 56px; font-size: 17px; }
   .field textarea, .field::after { padding: 0 8px; }
-  .hero:not(.asked) .field { min-height: 74px; align-content: start; }
-  .hero:not(.asked) .field textarea { padding-top: 7px; }
+  .hero .field { min-height: 74px; align-content: start; }
+  .hero .field textarea { padding-top: 7px; }
   .typer { flex-direction: column; align-items: flex-start; gap: 12px; }
   .typed-line { max-width: 100%; padding: 0 8px; }
   .badge { border-radius: calc(var(--r) - var(--in) - 1px); }
@@ -503,9 +505,9 @@ footer .links { display: flex; gap: 22px; }
   nav .links > a:not(:last-child, .ghost) { display: none; }
   .me span { display: none; }
   .page { --rail: 0px; --gutter: 20px; }
-  .hero h1, .hero.asked h1 { margin-top: 80px; }
+  .hero h1 { margin-top: 148px; }
   .hero h1 { font-size: min(12.4vw, 60px); }
-  .hero.asked h1 { font-size: 30px; }
+  .start h1 { font-size: 30px; }
   .page > section { padding-top: 132px; }
   h2 { font-size: 34px; }
   .line { margin-top: 14px; font-size: 17px; line-height: 1.5; }
@@ -532,7 +534,8 @@ footer .links { display: flex; gap: 22px; }
   footer { margin-top: 88px; }
   .t3-lane { padding: 8px 12px 16px; }
   .t3-msgs .u { max-width: 92%; }
-  .signin .btn { flex: 1 1 100%; height: 48px; justify-content: center; }
+  .signin .btn { flex: 1 1 0; min-width: 0; height: 48px; }
+  .signin .via { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .t3-left .chip:nth-of-type(n+2), .t3-left .sep, .t3-right > .t3-icon { display: none; }
   .t3-panels { display: none; }
 }

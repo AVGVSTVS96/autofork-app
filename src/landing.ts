@@ -94,11 +94,10 @@ const graph = (page: HTMLElement) => {
     if (narrow()) {
       const pad = parseFloat(getComputedStyle(page).paddingLeft)
       const Y = pad + 7, T = Y + 22
-      const h1 = one(".hero h1")
-      const head = h1.y - 22, fork = head - 42
-      shown(fork - 18, head + 10, 14)
-      lane("theirs", T, fork - 18, head)
-      svgEl(art, "path", { class: "yours", d: bend(T, fork, Y, head) })
+      const head = one(".hero h1").y - 24, split = head - 44, fork = split - 44, top = fork - 32
+      shown(top, head + 10, 20)
+      lane("theirs", T, top, head)
+      svgEl(art, "path", { class: "yours", d: `${bend(T, fork, Y, split)}V${head}` })
       later(dot("c", T, head, 3.5), head)
       release(T, fork, 0, "right")
       dot("head", Y, head, 8)
