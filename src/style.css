@@ -54,7 +54,7 @@ svg.graph { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 .graph .theirs { stroke: var(--trunk); }
 .graph .yours { stroke: var(--you); }
 .graph .merge { stroke: var(--trunk); }
-.graph .reach { stroke: var(--you-line); stroke-width: 2; }
+.graph .reach { fill: var(--you); }
 .graph .c { fill: var(--trunk); stroke: var(--bg); stroke-width: 2.5; }
 .graph .rr { fill: var(--bg); stroke: var(--trunk); stroke-width: 2.5; }
 .graph .y { fill: var(--you); stroke: var(--bg); stroke-width: 3; }
@@ -65,7 +65,10 @@ svg.graph { position: absolute; inset: 0; width: 100%; height: 100%; pointer-eve
 .graph .draw.in { stroke-dashoffset: 0; }
 .graph .dot-in { r: 0; transition: r 460ms var(--spring) var(--delay, 0ms); }
 .graph .dot-in.in { r: var(--r); }
-.graph-tag { position: absolute; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--hair-2); border-radius: 6px; background: var(--bg); font: 400 11px/1 var(--mono); color: var(--ink-3); transform: translate(-100%, -50%); white-space: nowrap; opacity: 0; transition: opacity 400ms var(--out) var(--delay, 0ms); }
+.graph .grow-in { transform-box: fill-box; transform-origin: left center; scale: 0 1; transition: scale 700ms var(--out) 120ms; }
+.graph .grow-in.in { scale: 1; }
+.graph-tag { position: absolute; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid var(--hair-2); border-radius: 6px; background: var(--bg); font: 400 11px/1 var(--mono); color: var(--ink-3); translate: -100% -50%; white-space: nowrap; opacity: 0; transition: opacity 400ms var(--out) var(--delay, 0ms); }
+.graph-tag.right { translate: 0 -50%; }
 .graph-tag.in { opacity: 1; }
 
 .page > nav { display: flex; align-items: center; justify-content: space-between; height: 76px; margin-left: calc(-1 * var(--rail)); max-width: none; position: relative; z-index: 1; }
@@ -99,8 +102,9 @@ nav .links { align-items: center; }
 .field textarea::placeholder, .change textarea::placeholder, .paste input::placeholder { color: var(--ink-3); }
 .typer { position: absolute; inset: 0; display: flex; align-items: center; gap: 9px; color: var(--ink); white-space: nowrap; overflow: hidden; pointer-events: none; transition: opacity .15s ease; }
 .typer:not(.live) { opacity: 0; }
-.typed { overflow: hidden; text-overflow: clip; }
-.caret { width: 2px; height: 22px; margin-left: -7px; flex: none; background: var(--you); border-radius: 1px; animation: blink 1s steps(1) infinite; }
+.typed-line { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.typed { overflow: hidden; text-overflow: ellipsis; }
+.caret { width: 2px; height: 22px; flex: none; background: var(--you); border-radius: 1px; animation: blink 1s steps(1) infinite; }
 .typing .caret { animation: none; }
 @keyframes blink { 50% { opacity: 0; } }
 
@@ -109,7 +113,7 @@ nav .links { align-items: center; }
 .reel { display: grid; justify-items: start; }
 .reel span { display: flex; align-items: center; gap: 8px; height: 32px; font-weight: 640; font-size: 17px; white-space: nowrap; }
 .reel img { width: 22px; height: 22px; border-radius: 6px; flex: none; }
-.ask button, .paste button { flex: none; height: calc(68px - 2 * var(--in) - 2px); padding: 0 22px; border: 0; border-radius: calc(var(--r) - var(--in)); background: var(--you); color: var(--on-you); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; cursor: pointer; transition: var(--press); }
+.ask button, .paste button { flex: none; height: calc(68px - 2 * var(--in) - 2px); padding: 0 22px; border: 0; border-radius: calc(var(--r) - var(--in) - 1px); background: var(--you); color: var(--on-you); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; cursor: pointer; transition: var(--press); }
 .ask button:focus-visible, .paste button:focus-visible { outline-offset: -4px; outline-color: var(--on-you); }
 .ask button:disabled, .paste button:disabled { opacity: 1; background: var(--panel-2); color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--hair); }
 
@@ -428,15 +432,16 @@ h2 { margin: 0; font-size: clamp(34px, 4.4vw, 60px); line-height: 1.02; letter-s
 .lineage > svg circle { r: 0; transition: r .5s var(--spring) var(--d); }
 .lineage > svg text { opacity: 0; transition: opacity .5s ease var(--d, .6s); }
 .lineage.in > svg path { stroke-dashoffset: 0; }
-.lineage.in > svg circle { r: var(--r); }
-.lineage.in > svg text { opacity: 1; }
+.lineage.in > svg circle, .lineage > svg circle.in { r: var(--r); }
+.lineage.in > svg text, .lineage > svg text.in { opacity: 1; }
+.lineage:not(.wide) > svg path { transition: stroke-dashoffset .25s linear; }
 .lineage a text { text-decoration: underline; text-decoration-color: var(--hair-2); }
 .lineage a:hover text { fill: var(--you); }
 .lineage .say { stroke: var(--you-line); stroke-width: 1.5; }
 .lineage .p { fill: var(--you); }
 .posts { list-style: none; margin: 0; padding: 0; }
-.posts li { position: absolute; left: 66px; right: 0; max-width: 480px; opacity: 0; transform: translateY(8px); transition: opacity .5s ease var(--d), transform .7s var(--out) var(--d); }
-.lineage.in .posts li { opacity: 1; transform: none; }
+.posts li { position: absolute; left: 60px; right: 0; max-width: 480px; opacity: 0; transform: translateY(8px); transition: opacity .5s ease var(--d), transform .7s var(--out) var(--d); }
+.lineage.in .posts li, .posts li.in { opacity: 1; transform: none; }
 .lineage.wide .posts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 14px; margin-left: 28%; }
 .lineage.wide .posts li { position: static; }
 .posts a { display: grid; gap: 8px; padding: 14px 16px 16px; background: var(--panel); border: 1px solid var(--hair); border-radius: 16px; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; transition: var(--press); }
@@ -473,11 +478,14 @@ footer .links { display: flex; gap: 22px; }
   .yours-card { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
-  .ask { --r: 20px; flex-wrap: wrap; padding: 8px; gap: 8px; }
-  .field { flex-basis: 100%; min-height: 56px; padding: 0 6px; font-size: 17px; }
-  .hero:not(.asked) .field { min-height: 88px; }
-  .typer { flex-wrap: wrap; align-content: center; row-gap: 6px; white-space: normal; padding: 0 6px; }
-  .typed { overflow: visible; }
+  .ask { flex-wrap: wrap; padding: var(--in); gap: var(--in); }
+  .field { flex-basis: 100%; min-height: 56px; font-size: 17px; }
+  .field textarea, .field::after { padding: 0 8px; }
+  .hero:not(.asked) .field { min-height: 74px; align-content: start; }
+  .hero:not(.asked) .field textarea { padding-top: 7px; }
+  .typer { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .typed-line { max-width: 100%; padding: 0 8px; }
+  .badge { border-radius: calc(var(--r) - var(--in) - 1px); }
   .reel span { font-size: 16px; }
   .ask button { flex: 1; height: 48px; }
   .sub { margin: 24px 0 32px; font-size: 18px; line-height: 1.45; }
@@ -494,24 +502,25 @@ footer .links { display: flex; gap: 22px; }
   .changes, .run { padding-inline: 18px; }
   nav .links > a:not(:last-child, .ghost) { display: none; }
   .me span { display: none; }
-  .graph-tag { display: none; }
-  .page { --rail: 40px; --gutter: 20px; }
-  .hero h1 { margin-top: 56px; font-size: min(12.4vw, 60px); }
+  .page { --rail: 0px; --gutter: 20px; }
+  .hero h1, .hero.asked h1 { margin-top: 80px; }
+  .hero h1 { font-size: min(12.4vw, 60px); }
   .hero.asked h1 { font-size: 30px; }
-  .page > section { padding-top: 96px; }
+  .page > section { padding-top: 132px; }
   h2 { font-size: 34px; }
   .line { margin-top: 14px; font-size: 17px; line-height: 1.5; }
   .story { margin-top: 36px; gap: 24px; }
   .wish { padding: 18px 18px 20px; }
   .wish p { font-size: 22px; }
-  .t3, .asks { position: relative; margin-left: calc(-1 * var(--rail)); }
-  .t3 { margin-top: 36px; border-radius: 16px; box-shadow: 0 1px 0 var(--hair), 0 0 0 16px var(--bg); }
+  .t3 { margin-top: 36px; border-radius: 16px; }
   .t3-box { border-radius: 16px; }
+  .t3-ph { min-height: 0; margin-bottom: 38px; }
+  .releases { gap: 68px; }
   .t3-branch { border-radius: 0 0 12px 12px; }
   .t3-msgs .u { border-radius: 16px; }
-  .asks { margin-top: 12px; gap: 10px; background: var(--bg); box-shadow: 0 16px var(--bg); }
+  .asks { margin-top: 12px; gap: 10px; }
   .asks li { padding: 14px 16px; border-radius: 16px; font-size: 15px; }
-  .yours-card { margin-left: calc(-1 * var(--rail)); padding: 28px 20px 24px var(--rail); border-radius: 20px; }
+  .yours-card { padding: 28px 20px 24px; border-radius: 20px; }
   .gh { padding: 16px; }
   .gh-name { font-size: 19px; }
   .gh-run { flex-wrap: wrap; row-gap: 2px; font-size: 14.5px; }
@@ -529,7 +538,7 @@ footer .links { display: flex; gap: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .graph .draw, .graph .dot-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
+  .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
   .wait::before, .item.now > i, .caret { animation: none; }
   .ask, .btn, .pill, .target, .code, .paste, .segments button, .change textarea { transition: none !important; }
 }

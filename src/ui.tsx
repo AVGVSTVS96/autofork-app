@@ -223,8 +223,10 @@ const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; l
       <span ref={badge} className="badge">
         <span ref={reel} className="reel" />
       </span>
-      <span ref={typed} className="typed" />
-      <i className="caret" />
+      <span className="typed-line">
+        <span ref={typed} className="typed" />
+        <i className="caret" />
+      </span>
     </span>
   )
 }

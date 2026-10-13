@@ -11,10 +11,13 @@ const svgEl = (parent: Element, tag: string, attrs: Record<string, string | numb
   return n as SVGGraphicsElement
 }
 
-/* The graph down the left edge: their line with its commits and releases, yours branching off at the headline,
-   each release merging into yours, and every section hanging off yours. It grows as you scroll. */
+/* The git graph: their line with its commits and releases, yours branching off at the headline,
+   each release merging into yours, and every section hanging off yours. It grows as you scroll.
+   Wide screens run it down the left edge; phones draw it in the gaps between sections, so content gets the full width. */
 
 const versions = ["v0.0.41", "v0.0.42", "v0.0.43", "v0.0.44", "v0.0.45", "v0.0.46"]
+const narrow = () => matchMedia("(max-width: 600px)").matches
+const front = () => innerHeight * 0.88
 
 const graph = (page: HTMLElement) => {
   const svg = page.querySelector<SVGSVGElement>("svg.graph")!
@@ -28,87 +31,133 @@ const graph = (page: HTMLElement) => {
       return { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }
     }
     const one = (selector: string) => at(page.querySelector(selector)!)
-    const pad = parseFloat(getComputedStyle(page).paddingLeft)
-    const navX = one("nav").x
-    const railW = pad - navX
-    const T = navX + Math.min(30, railW * 0.28)
-    const B = pad - Math.min(38, Math.max(18, railW * 0.32))
-
-    const fork = one("[data-fork]"), you = one("[data-you]"), ask = one(".hero .ask"), hero = one(".hero")
-    const top = one("nav").y + one("nav").h + 6
-    const end = one("footer").y - 28
-    const y1 = fork.y + fork.h * 0.52, y2 = you.y + you.h * 0.52
 
     svg.replaceChildren()
     page.querySelectorAll(".graph-tag").forEach((t) => t.remove())
     timed = []
     lanes = []
 
-    const nodes = [...page.querySelectorAll("[data-node]")].map((h) => {
-      const r = at(h)
-      const lh = parseFloat(getComputedStyle(h).lineHeight) || r.h
-      return { x: r.x, y: r.y + Math.min(lh, r.h) * 0.55 }
-    })
+    const defs = svgEl(svg, "defs", {})
+    const mask = svgEl(defs, "mask", { id: "graph-shown", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: box.width, height: box.height })
+    const art = svgEl(svg, "g", { mask: "url(#graph-shown)" })
 
-    const t3 = one(".t3"), asks = one(".asks")
-    const [hideFrom, hideTo] = t3.x < T ? [t3.y - 16, asks.y + asks.h + 16] : [0, 0]
-
-    const first = Math.max(top + 30, fork.y - 40)
-    const releases = [...(y1 - first >= 48 ? [first] : []), ask.y + ask.h / 2 + 2, hero.y + hero.h + 70]
-    for (let i = 0; i < nodes.length - 1; i++) releases.push((nodes[i]!.y + nodes[i + 1]!.y) / 2 + 40)
-    const rels = releases.filter((y) => y < hideFrom - 20 || y > hideTo + 20).slice(0, versions.length)
-
-    const lane = (cls: string, d: string, from: number) => {
-      const p = svgEl(svg, "path", { class: cls, d }) as SVGPathElement
+    const shown = (from: number, to: number, fadeIn: number, fadeOut = 0) => {
+      const id = `graph-fade-${mask.childElementCount}`
+      const fade = svgEl(defs, "linearGradient", { id, x1: 0, y1: 0, x2: 0, y2: 1 })
+      const h = to - from
+      for (const [offset, opacity] of [[0, 0], [fadeIn / h, 1], [1 - fadeOut / h, 1], [1, fadeOut ? 0 : 1]] as const)
+        svgEl(fade, "stop", { offset, "stop-color": "#fff", "stop-opacity": opacity })
+      svgEl(mask, "rect", { x: 0, y: from, width: box.width, height: h, fill: `url(#${id})` })
+    }
+    const later = (el: SVGGraphicsElement, y: number) => {
+      if (el.tagName === "path") {
+        el.classList.add("draw")
+        el.style.setProperty("--len", String((el as SVGPathElement).getTotalLength()))
+      } else if (el.tagName === "circle") {
+        el.classList.add("dot-in")
+        el.style.setProperty("--r", `${el.getAttribute("r")}px`)
+      } else el.classList.add("grow-in")
+      timed.push({ el, y })
+      return el
+    }
+    const lane = (cls: string, x: number, from: number, to: number) => {
+      const p = svgEl(art, "path", { class: cls, d: `M${x} ${from}V${to}` }) as SVGPathElement
       lanes.push({ el: p, from, len: p.getTotalLength() })
     }
-    lane("theirs", `M${T} ${top}V${end}`, top)
-    const bend = (y2 - y1) * 0.6
-    svgEl(svg, "path", { class: "yours", d: `M${T} ${y1}C${T} ${y1 + bend} ${B} ${y2 - bend} ${B} ${y2}` })
-    lane("yours", `M${B} ${y2}V${end}`, y2)
-
-    const later = (el: Element, y: number) => {
-      el.classList.add(el.tagName === "path" ? "draw" : "dot-in")
-      if (el.tagName === "path") (el as SVGElement).style.setProperty("--len", String((el as SVGPathElement).getTotalLength()))
-      else (el as SVGElement).style.setProperty("--r", `${el.getAttribute("r")}px`)
-      timed.push({ el, y })
+    const bend = (x0: number, y0: number, x1: number, y1: number) => {
+      const m = (y0 + y1) / 2
+      return `M${x0} ${y0}C${x0} ${m} ${x1} ${m} ${x1} ${y1}`
     }
-
-    // their commits, between the releases
-    const busy = [...rels, y1].map((y) => [y - 18, y + 18]).concat([[hideFrom - 8, hideTo + 8]])
-    const gaps = [62, 38, 94, 54, 120, 46, 78, 140, 58]
-    for (let y = top + 34, i = 0; y < end - 10; y += gaps[i++ % gaps.length]!) {
-      if (busy.some(([a, b]) => y > a! && y < b!)) continue
-      later(svgEl(svg, "circle", { class: "c", cx: T, cy: y, r: 3.5 }), y)
-    }
-
-    // each release after the branch merges into yours
-    rels.forEach((y, i) => {
-      if (y > y2 + 10) {
-        later(svgEl(svg, "path", { class: "merge", d: `M${T} ${y}C${T} ${y + 30} ${B} ${y + 14} ${B} ${y + 44}` }), y)
-        later(svgEl(svg, "circle", { class: "y", cx: B, cy: y + 44, r: 5 }), y + 44)
-      }
-      later(svgEl(svg, "circle", { class: "rr", cx: T, cy: y, r: 7 }), y)
+    const dot = (cls: string, x: number, y: number, r: number) => svgEl(art, "circle", { class: cls, cx: x, cy: y, r })
+    const release = (x: number, y: number, i: number, side: "left" | "right") => {
+      later(dot("rr", x, y, 7), y)
       const tag = document.createElement("span")
-      tag.className = "graph-tag"
+      tag.className = `graph-tag ${side}`
       tag.textContent = versions[i]!
       page.append(tag)
-      const left = T - 14
-      if (left - tag.offsetWidth < 4) tag.remove()
-      else {
-        Object.assign(tag.style, { top: `${y}px`, left: `${left}px` })
-        timed.push({ el: tag, y })
-      }
-    })
-
-    svgEl(svg, "circle", { class: "rr", cx: T, cy: y1, r: 7 })
-    svgEl(svg, "circle", { class: "head", cx: B, cy: y2, r: 8 })
-    svgEl(svg, "path", { class: "reach", d: `M${B + 10} ${ask.y + ask.h / 2}H${ask.x - 4}` })
-
-    for (const n of nodes) {
-      if (n.x - 18 > B + 8) later(svgEl(svg, "path", { class: "reach", d: `M${B + 8} ${n.y}H${n.x - 18}` }), n.y)
-      later(svgEl(svg, "circle", { class: "y", cx: B, cy: n.y, r: 7 }), n.y)
+      const left = side === "left" ? x - 14 : x + 14
+      if (side === "left" && left - tag.offsetWidth < 4) return tag.remove()
+      Object.assign(tag.style, { top: `${y}px`, left: `${left}px` })
+      timed.push({ el: tag, y })
     }
+    const reach = (x: number, y: number, to: number) => {
+      const from = x + 9, w = to - 12 - from
+      if (w >= 12) later(svgEl(art, "rect", { class: "reach", x: from, y: y - 1, width: w, height: 2, rx: 1 }), y)
+      later(dot("y", x, y, 7), y)
+    }
+    const mid = (el: Element) => {
+      const r = at(el)
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || r.h
+      return { x: r.x, y: r.y + Math.min(lh, r.h) * 0.55 }
+    }
+
+    if (narrow()) {
+      const pad = parseFloat(getComputedStyle(page).paddingLeft)
+      const Y = pad + 7, T = Y + 22
+      const h1 = one(".hero h1")
+      const head = h1.y - 22, fork = head - 42
+      shown(fork - 18, head + 10, 14)
+      lane("theirs", T, fork - 18, head)
+      svgEl(art, "path", { class: "yours", d: bend(T, fork, Y, head) })
+      later(dot("c", T, head, 3.5), head)
+      release(T, fork, 0, "right")
+      dot("head", Y, head, 8)
+
+      let above: Element = page.querySelector(".hero")!
+      ;[...page.querySelectorAll(".page > section")].forEach((section, i) => {
+        const top = at(above).y + at(above).h + 18
+        const node = at(section.firstElementChild!).y - 22
+        above = section
+        const out = top + 30
+        shown(top, node + 10, 26)
+        lane("theirs", T, top, node)
+        lane("yours", Y, top, node)
+        later(svgEl(art, "path", { class: "merge", d: bend(T, out, Y, node) }), out)
+        release(T, out, i + 1, "right")
+        later(dot("c", T, node, 3.5), node)
+        later(dot("y", Y, node, 7), node)
+      })
+      return grow()
+    }
+
+    const pad = parseFloat(getComputedStyle(page).paddingLeft)
+    const navX = one("nav").x
+    const railW = pad - navX
+    const T = navX + Math.min(30, railW * 0.28)
+    const B = pad - Math.min(38, Math.max(18, railW * 0.32))
+
+    const fork = mid(page.querySelector("[data-fork]")!), you = mid(page.querySelector("[data-you]")!)
+    const ask = one(".hero .ask"), hero = one(".hero")
+    const top = one("nav").y + one("nav").h + 6
+    const end = one("footer").y - 20
+    const nodes = [...page.querySelectorAll(".page > section")].map((section) => ({ x: at(section.firstElementChild!).x, y: mid(section.querySelector("[data-node]")!).y }))
+
+    const first = Math.max(top + 44, fork.y - 100)
+    const rels = [...(fork.y - first >= 48 ? [first] : []), hero.y + hero.h + 70]
+    for (let i = 0; i < nodes.length - 1; i++) rels.push((nodes[i]!.y + nodes[i + 1]!.y) / 2 + 40)
+
+    shown(top, end, 32, 72)
+    lane("theirs", T, top, end)
+    svgEl(art, "path", { class: "yours", d: bend(T, fork.y, B, you.y) })
+    lane("yours", B, you.y, end)
+
+    const busy = [...rels, fork.y].map((y) => [y - 18, y + 18])
+    const gaps = [62, 38, 94, 54, 120, 46, 78, 140, 58]
+    for (let y = top + 34, i = 0; y < end - 10; y += gaps[i++ % gaps.length]!) {
+      if (!busy.some(([a, b]) => y > a! && y < b!)) later(dot("c", T, y, 3.5), y)
+    }
+
+    rels.slice(0, versions.length).forEach((y, i) => {
+      if (y > you.y + 10) {
+        later(svgEl(art, "path", { class: "merge", d: bend(T, y, B, y + 44) }), y)
+        later(dot("y", B, y + 44, 5), y + 44)
+      }
+      release(T, y, i, "left")
+    })
+    dot("rr", T, fork.y, 7)
+    dot("head", B, you.y, 8)
+    reach(B, ask.y + ask.h / 2, ask.x)
+    for (const n of nodes) reach(B, n.y, n.x)
 
     const band = one(".yours-card")
     for (const c of svg.querySelectorAll("circle")) {
@@ -119,13 +168,13 @@ const graph = (page: HTMLElement) => {
   }
 
   const grow = () => {
-    const front = scrollY + innerHeight * 0.92 - (page.getBoundingClientRect().top + scrollY)
+    const edge = scrollY + front() - (page.getBoundingClientRect().top + scrollY)
     for (const l of lanes) {
-      const shown = still() ? l.len : Math.max(0, Math.min(l.len, front - l.from))
+      const shown = still() ? l.len : Math.max(0, Math.min(l.len, edge - l.from))
       l.el.style.strokeDasharray = `${l.len}`
       l.el.style.strokeDashoffset = `${l.len - shown}`
     }
-    for (const t of timed) if (still() || t.y < front) t.el.classList.add("in")
+    for (const t of timed) if (still() || t.y < edge) t.el.classList.add("in")
   }
 
   let frame = 0
@@ -215,6 +264,9 @@ const lineage = (root: HTMLElement) => {
   const cards = [...root.querySelectorAll<HTMLElement>(".posts li")]
   const posts = cards.map((card) => ({ card, at: Number(card.dataset.at) }))
   let drawn: Element | undefined
+  let lines: { el: SVGPathElement; from: number; to: number }[] = []
+  let marks: { el: Element; y: number }[] = []
+  let seen = false
 
   const draw = () => {
     const W = root.clientWidth
@@ -222,6 +274,8 @@ const lineage = (root: HTMLElement) => {
     root.classList.toggle("wide", wide)
     cards.forEach((c) => (c.style.top = ""))
     drawn?.remove()
+    lines = []
+    marks = []
     const s = svgEl(root, "svg", { role: "img", "aria-label": root.dataset.label! }) as unknown as SVGSVGElement
     drawn = s
 
@@ -253,10 +307,11 @@ const lineage = (root: HTMLElement) => {
       const list = cards[0]!.parentElement!, top = list.offsetTop + list.offsetHeight
       for (const { card, at } of posts) {
         const from = card.offsetLeft + card.offsetWidth / 2, y0 = card.offsetTop + card.offsetHeight - top
-        svgEl(s, "path", { class: "say", d: `M${from} ${y0}C${from} ${M * 0.6} ${x(at)} ${M * 0.4} ${x(at)} ${M}` })
+        const m = (y0 + M) / 2
+        svgEl(s, "path", { class: "say", d: `M${from} ${y0}C${from} ${m} ${x(at)} ${m} ${x(at)} ${M}` })
       }
       svgEl(s, "path", { class: "main", d: `M${x(0)} ${M}H${x(1)}` })
-      svgEl(s, "path", { class: "exp", d: `M${out} ${M}C${out + 40} ${M} ${out + 30} ${E} ${out + 80} ${E}H${back - 80}C${back - 30} ${E} ${back - 40} ${M} ${back} ${M}` })
+      svgEl(s, "path", { class: "exp", d: `M${out} ${M}C${out + 40} ${M} ${out + 40} ${E} ${out + 80} ${E}H${back - 80}C${back - 40} ${E} ${back - 40} ${M} ${back} ${M}` })
       label(s, out + 84, E - 16, "experimental forks", "group")
       for (const m of main) {
         const anchor = m.end ? "end" : "start"
@@ -279,7 +334,7 @@ const lineage = (root: HTMLElement) => {
         ...[...exp.map((e) => ({ ...e, lane: 1 })), ...posts.map((p) => ({ name: "", when: "", at: p.at, lane: 0, card: p.card }))].sort((a, b) => a.at - b.at),
         { ...main[2]!, lane: 0 },
       ]
-      const step = 58, X = 10, L = 46, lead = 22
+      const step = 58, X = 7, L = 40, lead = 22
       const ys: number[] = []
       let y = 16
       for (const row of rows) {
@@ -293,8 +348,8 @@ const lineage = (root: HTMLElement) => {
       s.setAttribute("viewBox", `0 0 ${W} ${H}`)
       s.setAttribute("height", String(H))
       const out = ys[1]! + 24, back = ys.at(-1)! - 24
-      svgEl(s, "path", { class: "main", d: `M${X} ${ys[0]}V${ys.at(-1)}` })
-      svgEl(s, "path", { class: "exp", d: `M${X} ${out}C${X} ${out + 20} ${L} ${out + 10} ${L} ${out + 34}V${back - 34}C${L} ${back - 10} ${X} ${back - 20} ${X} ${back}` })
+      const trunk = svgEl(s, "path", { class: "main", d: `M${X} ${ys[0]}V${ys.at(-1)}` }) as SVGPathElement
+      const side = svgEl(s, "path", { class: "exp", d: `M${X} ${out}C${X} ${out + 17} ${L} ${out + 17} ${L} ${out + 34}V${back - 34}C${L} ${back - 17} ${X} ${back - 17} ${X} ${back}` }) as SVGPathElement
       rows.forEach((it, i) => {
         if (it.card) return said(X, ys[i]!)
         const cx = it.lane ? L : X
@@ -302,13 +357,30 @@ const lineage = (root: HTMLElement) => {
         label(it.lane ? s : linked(it.name), cx + 20, ys[i]! + 5, it.name, it.lane ? "small" : "")
         label(s, W - 2, ys[i]! + 5, it.when, "when", "end")
       })
+      lines = [
+        { el: trunk, from: ys[0]!, to: ys.at(-1)! },
+        { el: side, from: out, to: back },
+      ]
+      marks = [
+        ...[...s.querySelectorAll("circle, text")].map((el) => ({ el, y: Number(el.getAttribute("cy") ?? el.getAttribute("y")) })),
+        ...cards.map((el) => ({ el, y: el.offsetTop + lead })),
+      ]
     }
     s.querySelectorAll("path").forEach((p) => p.setAttribute("pathLength", "1"))
     s.querySelectorAll("circle").forEach((c, i) => {
       c.style.setProperty("--r", `${c.getAttribute("r")}px`)
-      c.style.setProperty("--d", `${300 + i * 140}ms`)
+      c.style.setProperty("--d", wide ? `${300 + i * 140}ms` : "0ms")
     })
-    cards.forEach((c, i) => c.style.setProperty("--d", `${900 + i * 220}ms`))
+    cards.forEach((c, i) => c.style.setProperty("--d", wide ? `${900 + i * 220}ms` : "0ms"))
+    if (wide && seen) root.classList.add("in")
+    reveal()
+  }
+
+  const reveal = () => {
+    if (!drawn || root.classList.contains("wide") || still()) return
+    const edge = front() - drawn.getBoundingClientRect().top
+    for (const l of lines) l.el.style.strokeDashoffset = String(1 - Math.max(0, Math.min(1, (edge - l.from) / (l.to - l.from))))
+    for (const m of marks) if (m.y < edge) m.el.classList.add("in")
   }
 
   const sized = new ResizeObserver(draw)
@@ -317,11 +389,21 @@ const lineage = (root: HTMLElement) => {
     root.classList.add("in")
     return () => sized.disconnect()
   }
-  const seen = new IntersectionObserver(([e]) => e!.isIntersecting && root.classList.add("in"), { rootMargin: "0px 0px -35% 0px" })
-  seen.observe(root)
+  const watch = new IntersectionObserver(
+    ([e]) => {
+      if (!e!.isIntersecting) return
+      seen = true
+      if (root.classList.contains("wide")) root.classList.add("in")
+    },
+    { rootMargin: "0px 0px -35% 0px" },
+  )
+  watch.observe(root)
+  const scrolled = () => requestAnimationFrame(reveal)
+  addEventListener("scroll", scrolled, { passive: true })
   return () => {
     sized.disconnect()
-    seen.disconnect()
+    watch.disconnect()
+    removeEventListener("scroll", scrolled)
   }
 }
 
