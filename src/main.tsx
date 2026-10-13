@@ -2,7 +2,8 @@ import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } fr
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { ForkPage } from "./ForkPage.tsx"
-import { Home } from "./Home.tsx"
+import type { Agent } from "../shared/api.ts"
+import { Home, isAgent } from "./Home.tsx"
 import "./style.css"
 
 const root = createRootRoute({ component: Outlet })
@@ -10,10 +11,13 @@ const root = createRootRoute({ component: Outlet })
 const home = createRoute({
   getParentRoute: () => root,
   path: "/",
-  validateSearch: (search: Record<string, unknown>): { q?: string } => (typeof search.q === "string" && search.q ? { q: search.q } : {}),
+  validateSearch: (search: Record<string, unknown>): { q?: string; agent?: Agent } => ({
+    ...(typeof search.q === "string" && search.q ? { q: search.q } : {}),
+    ...(isAgent(search.agent) ? { agent: search.agent } : {}),
+  }),
   component: function HomeRoute() {
-    const { q } = home.useSearch()
-    return <Home q={q ?? ""} />
+    const { q, agent } = home.useSearch()
+    return <Home q={q ?? ""} agent={agent} />
   },
 })
 

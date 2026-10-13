@@ -44,14 +44,15 @@ export const resolve = (q: string, token: GitHub.Token) =>
       )
       return { repo: toRepo(repo), change: change.trim(), others: [] }
     }
-    const query = new URLSearchParams({ q: `${app.trim()} fork:false`, sort: "stars", per_page: "4" })
+    const query = new URLSearchParams({ q: `${app.trim()} fork:false`, sort: "stars", per_page: "10" })
     const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(
       Effect.catch(problem("GitHub search is busy. Name the repo as owner/name instead.")),
     )
-    const [repo, ...others] = found.items.map(toRepo)
+    const repos = found.items.map(toRepo)
+    const exact = repos.find((repo) => squash(repo.name) === squash(app))
+    const repo = exact ?? repos[0]
     if (!repo) return yield* new Problem({ message: `No open source repo on GitHub matches "${app.trim()}". Try owner/name.` })
-    const exact = squash(repo.name) === squash(app)
-    return { repo, change: change.trim(), others: exact ? [] : others }
+    return { repo, change: change.trim(), others: exact ? [] : repos.slice(1, 4) }
   })
 
 const KNOWN: Record<string, { verify: string }> = {

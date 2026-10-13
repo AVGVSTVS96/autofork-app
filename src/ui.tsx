@@ -1,5 +1,9 @@
-import { Link } from "@tanstack/react-router"
+import { useAtomValue } from "@effect/atom-react"
+import { Link, useRouterState } from "@tanstack/react-router"
+import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import * as client from "./client.ts"
+import facts from "./facts.json"
 import logo from "./svg/autofork.svg?raw"
 import claude from "./svg/claude.svg?raw"
 import openai from "./svg/openai.svg?raw"
@@ -11,13 +15,44 @@ const Svg = ({ src, className }: { src: string; className: string }) => (
 export const ClaudeIcon = () => <Svg src={claude} className="icon" />
 export const OpenAIIcon = () => <Svg src={openai} className="icon" />
 
-export const Bar = ({ children }: { children?: ReactNode }) => (
-  <header className="bar">
+const Logo = () => <Svg src={logo} className="logo" />
+
+export const Nav = ({ children }: { children?: ReactNode }) => (
+  <nav>
     <Link to="/" search={{}} className="brand" aria-label="autofork">
-      <Svg src={logo} className="logo" />
+      <Logo />
     </Link>
-    {children}
-  </header>
+    <div className="links">
+      {children}
+      <Me />
+    </div>
+  </nav>
+)
+
+const Me = () => {
+  const me = useAtomValue(client.me)
+  const here = useRouterState({ select: (state) => state.location.href })
+  const user = AsyncResult.isSuccess(me) ? me.value : null
+  return user ? (
+    <span className="me">
+      <img src={user.avatar} alt="" width={22} height={22} />
+      <span>{user.login}</span>
+    </span>
+  ) : (
+    <a href={`/api/github/start?back=${encodeURIComponent(here)}`}>Sign in</a>
+  )
+}
+
+export const Footer = () => (
+  <footer>
+    <span className="brand small">
+      <Logo />
+    </span>
+    <span className="links">
+      <a href={facts.repo}>GitHub</a>
+      <span>MIT</span>
+    </span>
+  </footer>
 )
 
 export type Example = { app: string; icon: string; change: string }
@@ -25,6 +60,7 @@ export type Example = { app: string; icon: string; change: string }
 const sentence = (example: Example) => `${example.app}, but ${example.change}`
 
 export const Composer = ({
+  id,
   value,
   onChange,
   onSubmit,
@@ -34,9 +70,10 @@ export const Composer = ({
   disabled,
   examples,
 }: {
+  id?: string
   value: string
   onChange: (value: string) => void
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, via?: string) => void
   placeholder?: string
   label: string
   action: string
@@ -48,13 +85,14 @@ export const Composer = ({
   const resume = useRef<ReturnType<typeof setTimeout>>(undefined)
   const live = !!examples && idle && !value
   const fallback = examples ? sentence(examples[current]!) : ""
-  const submit = (event: FormEvent) => {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const text = value.trim() || fallback
-    if (text && !disabled) onSubmit(text)
+    const via = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value || undefined
+    if (text && !disabled) onSubmit(text, via)
   }
   return (
-    <form className="ask" onSubmit={submit}>
+    <form className="ask" id={id} onSubmit={submit}>
       <label className="field" data-value={value}>
         <textarea
           rows={1}

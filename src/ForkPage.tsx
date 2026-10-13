@@ -4,7 +4,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { Bar, ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, OpenAIIcon } from "./ui.tsx"
+import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon } from "./ui.tsx"
 
 export const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
@@ -21,16 +21,16 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
   }, [working, refresh])
 
   return (
-    <>
-      <Bar>
+    <div className="page bare">
+      <Nav>
         <a className="ghost" href={`https://github.com/${owner}/${name}`} target="_blank" rel="noreferrer">
           <GitHubIcon />
           <span>
             {owner}/{name}
           </span>
         </a>
-      </Bar>
-      <main className="wrap page">
+      </Nav>
+      <main className="fork">
         {fork ? (
           <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} />
         ) : AsyncResult.isFailure(result) ? (
@@ -39,7 +39,7 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
           <p className="note wait">Loading {owner}/{name}…</p>
         )}
       </main>
-    </>
+    </div>
   )
 }
 
@@ -179,13 +179,13 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
           {run.log[0]}
         </p>
       ) : done && run.log.length ? (
-        <ul className="story">
+        <ul className="log">
           {run.log.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
       ) : null}
-      <p className="links">
+      <p className="run-links">
         <a href={run.url} target="_blank" rel="noreferrer">
           See the run on GitHub
         </a>

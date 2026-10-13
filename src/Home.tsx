@@ -1,10 +1,13 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useNavigate } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
-import type { ForkState, Repo } from "../shared/api.ts"
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import type { Agent, ForkState, Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { Bar, ClaudeIcon, Composer, GitHubIcon, OpenAIIcon, stars, type Example } from "./ui.tsx"
+import facts from "./facts.json"
+import { start } from "./landing.ts"
+import { History, Meant, MineToday, Yours } from "./Sections.tsx"
+import { ClaudeIcon, Composer, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
 
 const EXAMPLES: ReadonlyArray<Example> = [
   { app: "T3 Code", icon: "t3code", change: "always show context usage" },
@@ -17,41 +20,76 @@ const EXAMPLES: ReadonlyArray<Example> = [
   { app: "UTM", icon: "utm", change: "list running VMs in the menu bar" },
 ]
 
-export const Home = ({ q }: { q: string }) => {
+export const isAgent = (value: unknown): value is Agent => value === "chatgpt" || value === "claude"
+
+export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(q)
-  const submit = (text: string) => void navigate({ to: "/", search: { q: text } })
+  const [shown, setShown] = useState(q)
+  if (q !== shown) {
+    setShown(q)
+    setDraft(q)
+  }
+  const page = useRef<HTMLDivElement>(null)
+  useEffect(() => start(page.current!), [])
+  const submit = (text: string, via?: string) => void navigate({ to: "/", search: { q: text, agent: isAgent(via) ? via : undefined } })
   return (
-    <>
-      <Bar />
-      <main className={q ? "wrap home asked" : "wrap home"}>
+    <div className="page" ref={page}>
+      <svg className="graph" aria-hidden="true" />
+      <Nav>
+        <a href="#how">How it works</a>
+        <a href="#self">Run it yourself</a>
+        <a href={facts.repo}>GitHub</a>
+      </Nav>
+      <header className={q ? "hero asked" : "hero"}>
         <h1>
-          <span>Make it yours.</span>
-          <span className="you">Keep their updates.</span>
+          <span data-fork>Make it yours.</span>
+          <span className="you" data-you>
+            Keep their updates.
+          </span>
         </h1>
         {q ? null : <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>}
-        <Composer value={draft} onChange={setDraft} onSubmit={submit} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
-        {q ? <Flow key={q} q={q} /> : <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>}
-      </main>
-    </>
+        <Composer id="ask" value={draft} onChange={setDraft} onSubmit={submit} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
+        {q ? (
+          <Flow key={q} q={q} agent={agent} />
+        ) : (
+          <>
+            <div className="signin">
+              <button type="submit" form="ask" value="chatgpt" className="btn">
+                <OpenAIIcon /> Continue with ChatGPT
+              </button>
+              <button type="submit" form="ask" value="claude" className="btn">
+                <ClaudeIcon /> Continue with Claude
+              </button>
+            </div>
+            <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
+          </>
+        )}
+      </header>
+      <Meant />
+      <MineToday />
+      <Yours />
+      <History />
+      <Footer />
+    </div>
   )
 }
 
-const Flow = ({ q }: { q: string }) => {
+const Flow = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
   const resolved = useAtomValue(useMemo(() => client.resolve(q), [q]))
   return AsyncResult.match(resolved, {
     onInitial: () => <p className="note wait">Finding it on GitHub…</p>,
     onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
-    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} />,
+    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} agent={agent} />,
   })
 }
 
-const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArray<Repo>; initialChange: string }) => {
+const Plan = ({ repo, others, initialChange, agent }: { repo: Repo; others: ReadonlyArray<Repo>; initialChange: string; agent: Agent | undefined }) => {
   const [change, setChange] = useState(initialChange)
   const navigate = useNavigate()
   const me = useAtomValue(client.me)
   const user = AsyncResult.isSuccess(me) ? me.value : undefined
-  const back = `/?q=${encodeURIComponent(`${repo.owner}/${repo.name}: ${change}`)}`
+  const back = `/?${new URLSearchParams({ q: `${repo.owner}/${repo.name}: ${change}`, ...(agent ? { agent } : {}) })}`
   return (
     <section className="plan">
       <a className="card target" href={`https://github.com/${repo.owner}/${repo.name}`} target="_blank" rel="noreferrer">
@@ -72,7 +110,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
               type="button"
               key={`${other.owner}/${other.name}`}
               className="pill"
-              onClick={() => void navigate({ to: "/", search: { q: `${other.owner}/${other.name}: ${change}` } })}
+              onClick={() => void navigate({ to: "/", search: { q: `${other.owner}/${other.name}: ${change}`, agent } })}
             >
               {other.owner}/{other.name}
             </button>
@@ -102,7 +140,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
           )}
         </li>
         {user && change.trim() ? (
-          <Prepare repo={repo} change={change} />
+          <Prepare repo={repo} change={change} agent={agent} />
         ) : (
           <>
             <li className="later">
@@ -120,7 +158,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
   )
 }
 
-const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
+const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: Agent | undefined }) => {
   const prepare = useAtomSet(client.prepare, { mode: "promiseExit" })
   const [state, setState] = useState<ForkState | null>(null)
   const [into, setInto] = useState<string | undefined>(undefined)
@@ -199,7 +237,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
         )}
         </div>
       </li>
-      {state?.status === "ready" ? <Connect owner={state.owner} name={state.name} change={change} /> : (
+      {state?.status === "ready" ? <Connect owner={state.owner} name={state.name} change={change} agent={agent} /> : (
         <li className="later">
           <span className="n">3</span>
           <p>The agent builds it on your ChatGPT or Claude plan</p>
@@ -209,10 +247,8 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
   )
 }
 
-type Pick = "chatgpt" | "claude" | null
-
-const Connect = ({ owner, name, change }: { owner: string; name: string; change: string }) => {
-  const [pick, setPick] = useState<Pick>(null)
+const Connect = ({ owner, name, change, agent }: { owner: string; name: string; change: string; agent: Agent | undefined }) => {
+  const [pick, setPick] = useState(agent)
   return (
     <li className="now">
       <span className="n">3</span>
