@@ -125,7 +125,7 @@ export const MineToday = () => (
   <section className="mine-today">
     <h2 data-node>Mine, today.</h2>
     <p className="line">
-      My T3 Code fork took {t3fork!.upstreamCommitsAbsorbed} commits from T3 Code in its first two days and kept all {t3fork!.patches} changes.
+      My T3 Code fork took {t3fork!.upstreamCommitsAbsorbed} commits from T3 Code in its first two days. One change broke on day one and the agent rebuilt it.
     </p>
     <div className="t3" data-t3 />
     <ul className="asks">
