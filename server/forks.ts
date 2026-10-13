@@ -78,13 +78,14 @@ const KNOWN: Record<string, { verify: string }> = {
   "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
 }
 
-const setupSteps = (files: ReadonlySet<string>) => {
+const setupSteps = (files: ReadonlySet<string>, pnpmPinned: boolean) => {
   const node = files.has(".nvmrc")
     ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .nvmrc"]
     : files.has(".node-version")
       ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .node-version"]
       : ["      - uses: actions/setup-node@v7", "        with:", "          node-version: 24"]
-  if (files.has("pnpm-lock.yaml")) return ["      - uses: pnpm/action-setup@v6", ...node]
+  if (files.has("pnpm-lock.yaml"))
+    return ["      - uses: pnpm/action-setup@v6", ...(pnpmPinned ? [] : ["        with:", "          version: 10"]), ...node]
   if (files.has("bun.lock") || files.has("bun.lockb")) return ["      - uses: oven-sh/setup-bun@v2"]
   if (files.has("package-lock.json") || files.has("yarn.lock") || files.has("package.json")) return node
   return []
@@ -256,6 +257,15 @@ const disableInherited = (token: string, owner: string, name: string) =>
     )
   })
 
+type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
+
+const pinsPnpm = (token: GitHub.Token, repo: string) =>
+  GitHub.text(token, `/repos/${repo}/contents/package.json`).pipe(
+    Effect.map((raw) => JSON.parse(Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()) as PackageJson),
+    Effect.map((pkg) => !!pkg.packageManager?.startsWith("pnpm@") || [pkg.devEngines?.packageManager ?? []].flat().some((each) => each.name === "pnpm")),
+    Effect.orElseSucceed(() => false),
+  )
+
 const SECRETS = { claude: "CLAUDE_CODE_OAUTH_TOKEN", chatgpt: "CODEX_AUTH" } as const satisfies Record<Agent, string>
 
 export const start = (user: User, owner: string, name: string, change: string, agent: Agent, credential: string) =>
@@ -285,7 +295,8 @@ export const start = (user: User, owner: string, name: string, change: string, a
     if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write")) {
       const upstream = repo.parent?.full_name ?? `${owner}/${name}`
       const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
-      files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch, setupSteps(root)) })
+      const pinned = root.has("pnpm-lock.yaml") && (yield* pinsPnpm(user.token, upstream))
+      files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch, setupSteps(root, pinned)) })
       if (!managed) {
         const follow = (yield* releasesExist(user.token, upstream)) ? "releases" : branch
         const config = { upstream, follow, verify: KNOWN[upstream]?.verify }
