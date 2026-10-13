@@ -13,6 +13,8 @@ export const me = Client.query("app", "me", {})
 
 export const fork = (owner: string, name: string) => Client.query("app", "fork", { params: { owner, name } })
 
+export const yours = (owner: string, name: string) => Client.query("app", "yours", { params: { owner, name } })
+
 export const resolve = (app: string) => Client.query("app", "resolve", { query: { q: app }, timeToLive: "10 minutes" })
 
 export const prepare = Client.mutation("app", "prepare")

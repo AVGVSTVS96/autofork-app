@@ -83,7 +83,8 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
         }),
       ),
     )
-    .handle("fork", ({ params }) => github(viewer.pipe(Effect.flatMap((user) => Forks.status(params.owner, params.name, user)))))
+    .handle("fork", ({ params }) => github(Forks.status(params.owner, params.name)))
+    .handle("yours", ({ params }) => viewer.pipe(Effect.flatMap((user) => (user ? Forks.yours(user, params.owner, params.name) : Effect.succeed(false)))))
     .handle("addChange", ({ params, payload }) =>
       github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.addChange(user, params.owner, params.name, payload.change)))),
     ),

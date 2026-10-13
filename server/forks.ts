@@ -32,6 +32,12 @@ const problem = (message: string) => () => Effect.fail(new Problem({ message }))
 
 const GITHUB = /^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/?#].*)?$/i
 
+const keep = <K, V>(cache: Map<K, V>, key: K, value: V, size = 2000) => {
+  cache.delete(key)
+  cache.set(key, value)
+  if (cache.size > size) cache.delete(cache.keys().next().value!)
+}
+
 const searched = new Map<string, { repos: Repo[]; at: number }>()
 
 const search = (app: string, token: GitHub.Token) =>
@@ -337,6 +343,17 @@ const story = (raw: string, name: (id: string) => string): Pick<Run, "log" | "mo
   return { log: [...new Set(told)], moved: false }
 }
 
+const told = new Map<number, Pick<Run, "log" | "moved">>()
+
+const finishedLog = (token: GitHub.Token, owner: string, name: string, job: number, describe: (id: string) => string) => {
+  const hit = told.get(job)
+  if (hit) return Effect.succeed(hit)
+  return GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job}/logs`).pipe(
+    Effect.map((raw) => story(raw, describe)),
+    Effect.tap((story) => Effect.sync(() => keep(told, job, story, 500))),
+  )
+}
+
 const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (id: string) => string) =>
   Effect.gen(function* () {
     const { workflow_runs } = yield* GitHub.request<{ workflow_runs: WorkflowRun[] }>(
@@ -349,10 +366,10 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
     const { jobs } = yield* GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/jobs`)
     const job = jobs[0]
     const untold = { log: [], moved: false }
-    const told = job && job.status === "completed" ? yield* GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(
-      Effect.map((raw) => story(raw, describe)),
-      Effect.orElseSucceed(() => untold),
-    ) : untold
+    const log =
+      job && job.status === "completed"
+        ? yield* finishedLog(token, owner, name, job.id, describe).pipe(Effect.orElseSucceed(() => untold))
+        : untold
     return {
       url: run.html_url,
       status: run.status,
@@ -360,7 +377,7 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
       startedAt: run.run_started_at,
       updatedAt: run.updated_at,
       steps: (job?.steps ?? []).map(({ name, status, conclusion }) => ({ name, status, conclusion })),
-      ...told,
+      ...log,
     } satisfies Run
   }).pipe(Effect.catchIf(GitHub.missing, () => Effect.succeed(null)))
 
@@ -369,54 +386,69 @@ const summary = (doc: string) => {
   return paragraph.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? paragraph
 }
 
-export const status = (owner: string, name: string, viewer: User | undefined) =>
+type TreeEntry = { path: string; type: string; size?: number; sha: string }
+
+const trees = new Map<string, TreeEntry[]>()
+const blobs = new Map<string, string>()
+
+const bySha = <A>(cache: Map<string, A>, sha: string, load: Effect.Effect<A, GitHub.GitHubError>) => {
+  const hit = cache.get(sha)
+  return hit === undefined ? Effect.tap(load, (value) => Effect.sync(() => keep(cache, sha, value))) : Effect.succeed(hit)
+}
+
+const tree = (token: GitHub.Token, owner: string, name: string, sha: string) =>
+  bySha(trees, sha, GitHub.request<{ tree: TreeEntry[] }>(token, "GET", `/repos/${owner}/${name}/git/trees/${sha}`).pipe(Effect.map(({ tree }) => tree)))
+
+const blob = (token: GitHub.Token, owner: string, name: string, sha: string) =>
+  bySha(
+    blobs,
+    sha,
+    GitHub.request<{ content: string }>(token, "GET", `/repos/${owner}/${name}/git/blobs/${sha}`).pipe(
+      Effect.map(({ content }) => Buffer.from(content, "base64").toString()),
+    ),
+  )
+
+export const status = (owner: string, name: string) =>
   Effect.gen(function* () {
-    const token = yield* GitHub.repoToken(owner, name).pipe(Effect.orElseSucceed(() => viewer?.token))
+    const token = yield* GitHub.repoToken(owner, name).pipe(Effect.catch(() => GitHub.appToken))
     const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${owner}/${name}`).pipe(
-      Effect.catch(problem(`There's no fork at github.com/${owner}/${name}.`)),
+      Effect.catchIf(GitHub.missing, problem(`There's no fork at github.com/${owner}/${name}.`)),
     )
     const control = yield* listDir(token, owner, name, ".autofork")
-    const issues = yield* GitHub.request<{ title: string; html_url: string; pull_request?: unknown }[]>(
-      token,
-      "GET",
-      `/repos/${owner}/${name}/issues?state=open&per_page=100`,
-    ).pipe(
-      Effect.map((list) => new Map(list.map((issue) => [issue.title, issue.html_url]))),
-      Effect.orElseSucceed(() => new Map<string, string>()),
-    )
-    const changes = yield* Effect.forEach(
+    const found = yield* Effect.forEach(
       control.filter((entry) => entry.type === "dir"),
       (dir) =>
         Effect.gen(function* () {
-          const files = yield* listDir(token, owner, name, `.autofork/${dir.name}`)
-          const read = (file: string) =>
-            GitHub.text(token, `/repos/${owner}/${name}/contents/.autofork/${dir.name}/${file}`).pipe(
-              Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
-              Effect.orElseSucceed(() => ""),
-            )
-          const doc = yield* read("PATCH.md")
-          const paused = files.some((file) => file.name === "UPSTREAM.md") ? summary(yield* read("UPSTREAM.md")) : null
-          const built = files.some((file) => file.name.endsWith(".patch") && file.size > 0)
-          return {
-            id: dir.name,
-            text: summary(doc),
-            state: paused !== null ? "paused" : built ? "built" : "building",
-            upstream: paused,
-            issue: paused !== null ? (issues.get(`${dir.name}: upstream does this now`) ?? null) : null,
-          } satisfies Change
+          const files = yield* tree(token, owner, name, dir.sha)
+          const read = (file: string) => {
+            const entry = files.find((each) => each.path === file)
+            return entry ? blob(token, owner, name, entry.sha).pipe(Effect.orElseSucceed(() => "")) : Effect.succeed("")
+          }
+          const paused = files.some((file) => file.path === "UPSTREAM.md") ? summary(yield* read("UPSTREAM.md")) : null
+          const built = files.some((file) => file.path.endsWith(".patch") && (file.size ?? 0) > 0)
+          return { id: dir.name, text: summary(yield* read("PATCH.md")), paused, built }
         }),
       { concurrency: 6 },
+    )
+    const issues = found.some((change) => change.paused !== null)
+      ? yield* GitHub.request<{ title: string; html_url: string }[]>(token, "GET", `/repos/${owner}/${name}/issues?state=open&per_page=100`).pipe(
+          Effect.map((list) => new Map(list.map((issue) => [issue.title, issue.html_url]))),
+          Effect.orElseSucceed(() => new Map<string, string>()),
+        )
+      : new Map<string, string>()
+    const changes = found.map(
+      ({ id, text, paused, built }): Change => ({
+        id,
+        text,
+        state: paused !== null ? "paused" : built ? "built" : "building",
+        upstream: paused,
+        issue: paused !== null ? (issues.get(`${id}: upstream does this now`) ?? null) : null,
+      }),
     )
     const secrets = yield* GitHub.request<{ secrets: { name: string }[] }>(token, "GET", `/repos/${owner}/${name}/actions/secrets`).pipe(
       Effect.map(({ secrets }) => new Set(secrets.map((secret) => secret.name))),
       Effect.orElseSucceed(() => new Set<string>()),
     )
-    const yours = viewer
-      ? yield* GitHub.request<GitHubRepo>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
-          Effect.map((seen) => !!seen.permissions?.push),
-          Effect.orElseSucceed(() => false),
-        )
-      : false
     const agent: Agent | null = secrets.has(SECRETS.claude) ? "claude" : secrets.has(SECRETS.chatgpt) ? "chatgpt" : null
     return {
       owner: repo.owner.login,
@@ -425,6 +457,11 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
       agent,
       changes,
       run: yield* latestRun(token, owner, name, (id) => changes.find((change) => change.id === id)?.text ?? id),
-      yours,
     }
   })
+
+export const yours = (viewer: User, owner: string, name: string) =>
+  GitHub.request<GitHubRepo>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
+    Effect.map((seen) => !!seen.permissions?.push),
+    Effect.orElseSucceed(() => false),
+  )

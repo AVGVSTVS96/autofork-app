@@ -10,15 +10,29 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
   const result = useAtomValue(atom)
   const refresh = useAtomRefresh(atom)
+  const mine = useAtomValue(useMemo(() => client.yours(owner, name), [owner, name]))
   const fork = Option.getOrNull(AsyncResult.value(result))
   const run = fork?.run && (!since || fork.run.startedAt >= since) ? fork.run : null
-  const busy = !!since && (!run || run.status !== "completed")
-  const working = busy || fork?.changes.some((change) => change.state === "building") || run?.status === "in_progress" || run?.status === "queued"
+  const live = (!!since && !run) || (!!run && run.status !== "completed")
 
   useEffect(() => {
-    const timer = setInterval(refresh, working ? 3000 : 30000)
-    return () => clearInterval(timer)
-  }, [working, refresh])
+    let timer: ReturnType<typeof setTimeout>
+    const wait = () => {
+      clearTimeout(timer)
+      if (document.visibilityState === "visible") timer = setTimeout(tick, live ? 5000 : 60000)
+    }
+    const tick = () => {
+      refresh()
+      wait()
+    }
+    const seen = () => (document.visibilityState === "visible" ? tick() : clearTimeout(timer))
+    wait()
+    document.addEventListener("visibilitychange", seen)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener("visibilitychange", seen)
+    }
+  }, [live, refresh])
 
   return (
     <div className="page bare">
@@ -32,7 +46,7 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
       </Nav>
       <main className="fork">
         {fork ? (
-          <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} />
+          <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} yours={AsyncResult.isSuccess(mine) && mine.value} />
         ) : AsyncResult.isFailure(result) ? (
           <p className="note bad">{client.failure(result.cause)}</p>
         ) : (
@@ -43,7 +57,7 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
   )
 }
 
-const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: boolean }) => {
+const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; waiting: boolean; yours: boolean }) => {
   const app = fork.upstream?.split("/")[1] ?? fork.name
   return (
     <>
@@ -107,7 +121,7 @@ const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: bo
       </ul>
 
       <Progress run={run} waiting={waiting} fork={fork} />
-      {fork.yours ? <More owner={fork.owner} name={fork.name} /> : null}
+      {yours ? <More owner={fork.owner} name={fork.name} /> : null}
     </>
   )
 }

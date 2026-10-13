@@ -85,7 +85,6 @@ export const Fork = Schema.Struct({
   agent: Schema.NullOr(Agent),
   changes: Schema.Array(Change),
   run: Schema.NullOr(Run),
-  yours: Schema.Boolean,
 })
 export type Fork = typeof Fork.Type
 
@@ -116,6 +115,7 @@ export const AppGroup = HttpApiGroup.make("app")
       error: [Problem, SignedOut],
     }),
     HttpApiEndpoint.get("fork", "/api/forks/:owner/:name", { params: fork, success: Fork, error: Problem }),
+    HttpApiEndpoint.get("yours", "/api/forks/:owner/:name/yours", { params: fork, success: Schema.Boolean }),
     HttpApiEndpoint.post("addChange", "/api/forks/:owner/:name/changes", {
       params: fork,
       payload: Schema.Struct({ change: Schema.String }),
