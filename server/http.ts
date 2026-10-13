@@ -99,7 +99,7 @@ const origin = (request: HttpServerRequest.HttpServerRequest) => {
 
 const params = (request: HttpServerRequest.HttpServerRequest) => new URL(request.url, "http://x").searchParams
 
-const safeBack = (back: string | null) => (back && back.startsWith("/") && !back.startsWith("//") ? back : "/")
+const safeBack = (back: string | null) => (back && /^\/(?![/\\])/.test(back) ? back : "/")
 
 const signIn = HttpRouter.add("GET", "/api/github/start", (request) =>
   Effect.gen(function* () {
