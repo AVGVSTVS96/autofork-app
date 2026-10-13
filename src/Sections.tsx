@@ -159,6 +159,12 @@ export const MineToday = () => (
           <b>T3 Code</b>, but the window title shows the thread I'm on
         </span>
       </li>
+      <li>
+        <img src="/icon-512.png" alt="" />
+        <span>
+          <b>autofork.dev</b>, but its examples are real open requests, refreshed every 4 days
+        </span>
+      </li>
     </ul>
   </section>
 )
