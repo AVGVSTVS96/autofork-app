@@ -15,5 +15,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["api", "server", "shared", "src", "vite.config.ts"]
+  "include": ["api", "server", "shared", "src", "vite.config.ts", ".github/examples"]
 }

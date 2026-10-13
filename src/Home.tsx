@@ -4,23 +4,14 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { isAgent, split, type Agent, type ForkState, type Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
+import examples from "./examples.json"
 import facts from "./facts.json"
 import { start } from "./landing.ts"
 import { History, Meant, MineToday, Yours } from "./Sections.tsx"
 import { known, type Found } from "./known.ts"
 import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
 
-const EXAMPLES: ReadonlyArray<Example> = [
-  { app: "T3 Code", icon: "t3code", change: "always show context usage" },
-  { app: "expo-gpt-live", icon: "expo-gpt-live", change: "call my own assistant instead" },
-  { app: "herdr", icon: "herdr", change: "show each pane's ID on its border" },
-  { app: "Ghostty", icon: "ghostty", change: "keep scrollback after a restart" },
-  { app: "Buzz", icon: "buzz", change: "let my agents share files with me" },
-  { app: "pi", icon: "pi", change: "compact long chats with a cheaper model" },
-  { app: "cmux", icon: "cmux", change: "ping my phone when an agent needs me" },
-  { app: "tmux", icon: "tmux", change: "show each agent's state in the status bar" },
-  { app: "UTM", icon: "utm", change: "pass Cmd-Q and Cmd-W through to the VM" },
-]
+const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, repo, change }) => ({ app, change, icon: repo.split("/")[1]!.toLowerCase() }))
 
 const Headline = () => (
   <h1>

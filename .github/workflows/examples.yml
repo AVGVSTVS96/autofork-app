@@ -1,0 +1,51 @@
+name: examples
+
+on:
+  schedule:
+    - cron: "37 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: examples
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - id: due
+        run: bun .github/examples/refresh.ts due
+      - if: steps.due.outputs.due == 'true'
+        run: npx -y @anthropic-ai/claude-code -p --dangerously-skip-permissions "Do what .github/examples/PATCH.md asks."
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      - if: steps.due.outputs.due == 'true'
+        id: check
+        run: bun .github/examples/refresh.ts check
+      - if: steps.due.outputs.due == 'true'
+        env:
+          MESSAGE: ${{ steps.check.outputs.message }}
+        run: |
+          git reset --quiet
+          git add src/examples.json src/known.json public/repos
+          git diff --cached --quiet && exit 0
+          tree="$(git write-tree)"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          scratch="refs/heads/examples-objects-${GITHUB_RUN_ID}"
+          git -c user.name=autofork -c user.email=autofork@users.noreply.github.com commit --quiet -m "$MESSAGE"
+          git push --quiet "$remote" "HEAD:$scratch"
+          signed="$(gh api "repos/$GITHUB_REPOSITORY/git/commits" -f message="$MESSAGE" -f tree="$tree" -f "parents[]=$GITHUB_SHA" --jq .sha)"
+          if gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/main" -f sha="$signed" > /dev/null; then
+            echo "pushed ${signed:0:12} to main, signed by GitHub"
+          else
+            echo "::warning::main moved while this ran, so tomorrow's run refreshes again"
+          fi
+          git push --quiet "$remote" --delete "$scratch"
