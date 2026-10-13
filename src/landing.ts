@@ -50,10 +50,13 @@ const graph = (page: HTMLElement) => {
       return { x: r.x, y: r.y + Math.min(lh, r.h) * 0.55 }
     })
 
+    const t3 = one(".t3"), asks = one(".asks")
+    const [hideFrom, hideTo] = t3.x < T ? [t3.y - 16, asks.y + asks.h + 16] : [0, 0]
+
     const first = Math.max(top + 30, fork.y - 40)
     const releases = [...(y1 - first >= 48 ? [first] : []), ask.y + ask.h / 2 + 2, hero.y + hero.h + 70]
     for (let i = 0; i < nodes.length - 1; i++) releases.push((nodes[i]!.y + nodes[i + 1]!.y) / 2 + 40)
-    const rels = releases.slice(0, versions.length)
+    const rels = releases.filter((y) => y < hideFrom - 20 || y > hideTo + 20).slice(0, versions.length)
 
     const lane = (cls: string, d: string, from: number) => {
       const p = svgEl(svg, "path", { class: cls, d }) as SVGPathElement
@@ -72,7 +75,7 @@ const graph = (page: HTMLElement) => {
     }
 
     // their commits, between the releases
-    const busy = [...rels, y1].map((y) => [y - 18, y + 18])
+    const busy = [...rels, y1].map((y) => [y - 18, y + 18]).concat([[hideFrom - 8, hideTo + 8]])
     const gaps = [62, 38, 94, 54, 120, 46, 78, 140, 58]
     for (let y = top + 34, i = 0; y < end - 10; y += gaps[i++ % gaps.length]!) {
       if (busy.some(([a, b]) => y > a! && y < b!)) continue
