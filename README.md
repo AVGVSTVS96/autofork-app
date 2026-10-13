@@ -1,6 +1,6 @@
 # autofork-app
 
-The app behind [autofork.dev](https://autofork.dev): name an open source repo and the change you want, and get a fork in your GitHub account where an agent builds that change and keeps it current with every release.
+The app behind [autofork.com](https://autofork.com): name an open source repo and the change you want, and get a fork in your GitHub account where an agent builds that change and keeps it current with every release.
 
 ```
 "T3 Code, but always show context usage"

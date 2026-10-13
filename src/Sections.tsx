@@ -162,7 +162,7 @@ export const MineToday = () => (
       <li>
         <img src="/icon-512.png" alt="" />
         <span>
-          <b>autofork.dev</b>, but its examples are real open requests, refreshed every 4 days
+          <b>autofork.com</b>, but its examples are real open requests, refreshed every 4 days
         </span>
       </li>
     </ul>
