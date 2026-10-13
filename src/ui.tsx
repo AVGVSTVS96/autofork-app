@@ -190,12 +190,14 @@ export const Ask = ({
     requestAnimationFrame(() => input.current?.setSelectionRange(app.length, app.length))
   }
   const registry = useContext(RegistryContext)
+  const lead = (change: string) =>
+    [found?.app, ...examples.map((one) => one.app)].find((name) => name && change.toLowerCase().startsWith(`${name.toLowerCase()} `))
   const asked = () => {
     const change = text.trim().replace(BUT, "")
     if (app) return change ? `${app}, but ${change}` : app
     if (!change) return fallback
-    const lead = [found?.app, ...examples.map((one) => one.app)].find((name) => name && change.toLowerCase().startsWith(`${name.toLowerCase()} `))
-    return lead ? `${lead}, but ${change.slice(lead.length).trim().replace(BUT, "")}` : change
+    const name = lead(change)
+    return name ? `${name}, but ${change.slice(name.length).trim().replace(BUT, "")}` : change
   }
   const prefetch = () => {
     const name = split(asked()).app
@@ -230,7 +232,7 @@ export const Ask = ({
               if (event.key !== "Enter" || event.nativeEvent.isComposing) return
               event.preventDefault()
               if (guess) return chip(guess.app)
-              if (typed) return chip(typed)
+              if (typed && !lead(typed) && words(typed) <= 3) return chip(typed)
               field.form?.requestSubmit()
             }}
             onFocus={() => {
