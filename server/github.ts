@@ -70,6 +70,23 @@ const appJwt = Effect.gen(function* () {
   return `${body}.${createSign("RSA-SHA256").update(body).sign(Redacted.value(privateKey), "base64url")}`
 })
 
+let searchToken: { token: string; expires: number } | undefined
+
+export const appToken = Effect.gen(function* () {
+  if (searchToken && searchToken.expires > Date.now()) return searchToken.token
+  const jwt = yield* appJwt
+  const [installation] = yield* request<{ id: number }[]>(jwt, "GET", "/app/installations?per_page=1")
+  if (!installation) return undefined
+  const { token, expires_at } = yield* request<{ token: string; expires_at: string }>(
+    jwt,
+    "POST",
+    `/app/installations/${installation.id}/access_tokens`,
+    { permissions: { metadata: "read" } },
+  )
+  searchToken = { token, expires: Date.parse(expires_at) - 300_000 }
+  return token
+})
+
 export const repoToken = (owner: string, name: string) =>
   Effect.gen(function* () {
     const jwt = yield* appJwt

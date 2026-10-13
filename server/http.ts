@@ -30,7 +30,14 @@ const viewer = Effect.option(GitHub.signedIn).pipe(Effect.map((user) => (user._t
 
 const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
   handlers
-    .handle("resolve", ({ query }) => github(viewer.pipe(Effect.flatMap((user) => Forks.resolve(query.q, user?.token)))))
+    .handle("resolve", ({ query }) =>
+      github(
+        viewer.pipe(
+          Effect.flatMap((user) => (user ? Effect.succeed(user.token) : GitHub.appToken.pipe(Effect.orElseSucceed(() => undefined)))),
+          Effect.flatMap((token) => Forks.resolve(query.q, token)),
+        ),
+      ),
+    )
     .handle("me", () => viewer.pipe(Effect.map((user) => (user ? { login: user.login, avatar: user.avatar } : null))))
     .handle("signOut", () => Session.write({}))
     .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into)))))
