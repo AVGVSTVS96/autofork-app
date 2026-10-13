@@ -2,7 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
-import { split } from "../shared/api.ts"
+import { split, squash } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
 import { known } from "./known.ts"
@@ -127,7 +127,11 @@ export const Composer = ({
 }
 
 const CUT = /^(.+?)(?:\s*,\s*(?:but\s+)?|\s+but\s+|\s*:\s+)(.*)$/i
-const BUT = /^\s*(?:but\s+)?/i
+const BUT = /^but\s+/i
+
+type Guess = { app: string; name: string; avatar: string | undefined }
+
+const words = (text: string) => text.trim().split(/\s+/).length
 
 export const Ask = ({
   id,
@@ -149,28 +153,49 @@ export const Ask = ({
   const [text, setText] = useState(start.change)
   const [current, setCurrent] = useState(0)
   const [idle, setIdle] = useState(true)
+  const [asking, setAsking] = useState("")
+  const [found, setFound] = useState<Guess | undefined>(undefined)
   const resume = useRef<ReturnType<typeof setTimeout>>(undefined)
   const input = useRef<HTMLTextAreaElement>(null)
   const live = idle && !app && !text
   const fallback = sentence(examples[current]!)
+  const typed = app ? "" : text.trim()
+  const example = typed.length >= 2 ? examples.find((one) => squash(one.app).startsWith(squash(typed))) : undefined
+  const guess: Guess | undefined = example
+    ? { app: example.app, name: example.app, avatar: known(example.app)?.repo.avatar ?? `/repos/${example.icon}.png` }
+    : found?.app === typed
+      ? found
+      : undefined
 
+  useEffect(() => {
+    if (!typed || example || words(typed) > 3) return setAsking("")
+    const later = setTimeout(() => setAsking(typed), 320)
+    return () => clearTimeout(later)
+  }, [typed, example])
+
+  const chip = (name: string, rest = "") => {
+    setApp(name)
+    setText(rest)
+  }
   const type = (next: string) => {
     const cut = app ? null : next.match(CUT)
-    if (cut && cut[1]!.trim()) {
-      setApp(cut[1]!.trim())
-      setText(cut[2]!.replace(BUT, ""))
-    } else setText(app ? next.replace(BUT, "") : next)
+    if (cut && cut[1]!.trim()) chip(cut[1]!.trim(), cut[2]!)
+    else setText(next)
   }
   const unchip = () => {
-    const back = text.trim() ? `${app}, but ${text}` : app
+    const rest = text.trim().replace(BUT, "")
+    const back = rest ? `${app}, but ${rest}` : app
     setApp("")
     setText(back)
     requestAnimationFrame(() => input.current?.setSelectionRange(app.length, app.length))
   }
   const registry = useContext(RegistryContext)
   const asked = () => {
-    const change = text.trim()
-    return app ? (change ? `${app}, but ${change}` : app) : change || fallback
+    const change = text.trim().replace(BUT, "")
+    if (app) return change ? `${app}, but ${change}` : app
+    if (!change) return fallback
+    const lead = [found?.app, ...examples.map((one) => one.app)].find((name) => name && change.toLowerCase().startsWith(`${name.toLowerCase()} `))
+    return lead ? `${lead}, but ${change.slice(lead.length).trim().replace(BUT, "")}` : change
   }
   const prefetch = () => {
     const name = split(asked()).app
@@ -186,39 +211,46 @@ export const Ask = ({
     <form className="ask" id={id} onSubmit={submit}>
       <label className="field slots">
         {app ? <Chip app={app} onEdit={unchip} /> : null}
-        <span className="words">
-          {app ? <span className="but">but</span> : null}
-          <span className="entry" data-value={text}>
-            <textarea
-              ref={input}
-              rows={1}
-              value={text}
-              onChange={(event) => type(event.target.value.replace(/\n/g, " "))}
-              onKeyDown={(event) => {
-                const field = event.currentTarget
-                if (event.key === "Backspace" && app && field.selectionStart === 0 && field.selectionEnd === 0) {
-                  event.preventDefault()
-                  return unchip()
-                }
-                if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+        <span className="entry">
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            onChange={(event) => type(event.target.value.replace(/\n/g, " "))}
+            onKeyDown={(event) => {
+              const field = event.currentTarget
+              if (event.key === "Backspace" && app && field.selectionStart === 0 && field.selectionEnd === 0) {
                 event.preventDefault()
-                if (!app && text.trim()) return type(`${text.trim()}, `)
-                field.form?.requestSubmit()
-              }}
-              onFocus={() => {
-                clearTimeout(resume.current)
-                setIdle(false)
-              }}
-              onBlur={() => {
-                resume.current = setTimeout(() => setIdle(true), 1400)
-              }}
-              placeholder={live ? "" : app ? "what you'd change" : fallback}
-              aria-label={app ? `What you'd change in ${app}` : label}
-              autoComplete="off"
-              spellCheck={false}
-            />
+                return unchip()
+              }
+              if (event.key === "Tab" && !event.shiftKey && guess) {
+                event.preventDefault()
+                return chip(guess.app)
+              }
+              if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+              event.preventDefault()
+              if (guess) return chip(guess.app)
+              if (typed) return chip(typed)
+              field.form?.requestSubmit()
+            }}
+            onFocus={() => {
+              clearTimeout(resume.current)
+              setIdle(false)
+            }}
+            onBlur={() => {
+              resume.current = setTimeout(() => setIdle(true), 1400)
+            }}
+            placeholder={live ? "" : app ? "but what you'd change" : fallback}
+            aria-label={app ? `What you'd change in ${app}` : label}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <span className="mirror" aria-hidden="true">
+            {text}
+            {guess ? <Pick guess={guess} onPick={() => chip(guess.app)} /> : null}{" "}
           </span>
         </span>
+        {asking && !known(asking) ? <Recognize app={asking} onFound={setFound} /> : null}
         <Typer examples={examples} live={live} onLand={setCurrent} />
       </label>
       <button type="submit" onPointerEnter={prefetch} onPointerDown={prefetch} onFocus={prefetch}>
@@ -227,6 +259,31 @@ export const Ask = ({
     </form>
   )
 }
+
+const Recognize = ({ app, onFound }: { app: string; onFound: (guess: Guess) => void }) => {
+  const result = useAtomValue(client.resolve(app))
+  const repo = AsyncResult.isSuccess(result) ? result.value.repo : undefined
+  const close = repo && (squash(repo.name).includes(squash(app)) || squash(app).includes(squash(repo.name)))
+  useEffect(() => {
+    if (repo && close) onFound({ app, name: repo.name, avatar: repo.avatar })
+  }, [repo, close, app])
+  return null
+}
+
+const Pick = ({ guess, onPick }: { guess: Guess; onPick: () => void }) => (
+  <button
+    type="button"
+    className="pick"
+    tabIndex={-1}
+    onPointerDown={(event) => event.preventDefault()}
+    onClick={onPick}
+    title={`Fork ${guess.name}`}
+  >
+    {guess.avatar ? <img src={guess.avatar} alt="" /> : null}
+    {guess.name}
+    <kbd>tab</kbd>
+  </button>
+)
 
 const Chip = ({ app, onEdit }: { app: string; onEdit: () => void }) => {
   const ready = known(app)
