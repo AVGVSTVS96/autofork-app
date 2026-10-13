@@ -34,7 +34,8 @@ const useAsk = () => {
   return (text: string, agent: Agent | undefined) => void navigate({ to: "/", search: { q: text, agent } })
 }
 
-export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => (q ? <Start q={q} agent={agent} /> : <Landing />)
+export const Home = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) =>
+  q ? <Start q={q} agent={agent} error={error} /> : <Landing />
 
 const Landing = () => {
   const ask = useAsk()
@@ -88,7 +89,7 @@ const Landing = () => {
   )
 }
 
-const Start = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
+const Start = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) => {
   const ask = useAsk()
   const [draft, setDraft] = useState(q)
   const [shown, setShown] = useState(q)
@@ -102,22 +103,34 @@ const Start = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
       <main className="start">
         <Headline />
         <Composer value={draft} onChange={setDraft} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
-        <Flow key={q} q={q} agent={agent} />
+        <Flow key={q} q={q} agent={agent} error={error} />
       </main>
     </div>
   )
 }
 
-const Flow = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
+const Flow = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) => {
   const resolved = useAtomValue(useMemo(() => client.resolve(q), [q]))
   return AsyncResult.match(resolved, {
     onInitial: () => <p className="note wait">Finding it on GitHub…</p>,
     onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
-    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} agent={agent} />,
+    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} agent={agent} error={error} />,
   })
 }
 
-const Plan = ({ repo, others, initialChange, agent }: { repo: Repo; others: ReadonlyArray<Repo>; initialChange: string; agent: Agent | undefined }) => {
+const Plan = ({
+  repo,
+  others,
+  initialChange,
+  agent,
+  error,
+}: {
+  repo: Repo
+  others: ReadonlyArray<Repo>
+  initialChange: string
+  agent: Agent | undefined
+  error: string | undefined
+}) => {
   const [change, setChange] = useState(initialChange)
   const navigate = useNavigate()
   const me = useAtomValue(client.me)
@@ -168,6 +181,7 @@ const Plan = ({ repo, others, initialChange, agent }: { repo: Repo; others: Read
               <a className="btn primary" href={`/api/github/start?back=${encodeURIComponent(back)}`}>
                 <GitHubIcon /> Continue with GitHub
               </a>
+              {error ? <p className="bad">{error}</p> : null}
               <p className="fine">Keep "All repositories" so autofork can make the fork. It only changes the forks it makes.</p>
             </div>
           )}
@@ -251,6 +265,13 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
           <p>
             Your fork: <b>{state.owner}/{state.name}</b>
           </p>
+        ) : state.status === "install" ? (
+          <div>
+            <p>Install autofork on GitHub so it can make your fork, then come back here.</p>
+            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+              <GitHubIcon /> Install autofork
+            </a>
+          </div>
         ) : state.status === "fork" ? (
           <div>
             <p>autofork can only see the repos you picked. Fork it on GitHub, then come back here.</p>

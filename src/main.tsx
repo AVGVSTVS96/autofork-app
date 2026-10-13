@@ -11,13 +11,14 @@ const root = createRootRoute({ component: Outlet })
 const home = createRoute({
   getParentRoute: () => root,
   path: "/",
-  validateSearch: (search: Record<string, unknown>): { q?: string; agent?: Agent } => ({
+  validateSearch: (search: Record<string, unknown>): { q?: string; agent?: Agent; error?: string } => ({
     ...(typeof search.q === "string" && search.q ? { q: search.q } : {}),
     ...(isAgent(search.agent) ? { agent: search.agent } : {}),
+    ...(typeof search.error === "string" && search.error ? { error: search.error } : {}),
   }),
   component: function HomeRoute() {
-    const { q, agent } = home.useSearch()
-    return <Home q={q ?? ""} agent={agent} />
+    const { q, agent, error } = home.useSearch()
+    return <Home q={q ?? ""} agent={agent} error={error} />
   },
 })
 

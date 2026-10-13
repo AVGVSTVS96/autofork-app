@@ -27,7 +27,7 @@ export const isAgent = Schema.is(Agent)
 export const ForkState = Schema.Struct({
   owner: Schema.String,
   name: Schema.String,
-  status: Schema.Literals(["ready", "fork", "grant"]),
+  status: Schema.Literals(["ready", "install", "fork", "grant"]),
   link: Schema.NullOr(Schema.String),
   places: Schema.Array(Schema.String),
 })

@@ -108,12 +108,14 @@ const callback = HttpRouter.add("GET", "/api/github/callback", (request) =>
     const query = params(request)
     const session = yield* Session.read
     const pending = session.signIn
+    if (!pending) return HttpServerResponse.redirect(`/?error=${encodeURIComponent("GitHub sign-in expired. Try again.")}`)
+    const failed = (error: string) =>
+      HttpServerResponse.redirect(`${pending.back}${pending.back.includes("?") ? "&" : "?"}error=${encodeURIComponent(error)}`)
+    if (query.get("state") && query.get("state") !== pending.state) return failed("GitHub sign-in expired. Try again.")
     const code = query.get("code")
-    if (!pending || !code || (query.get("state") && query.get("state") !== pending.state)) {
-      return HttpServerResponse.redirect(`/?error=${encodeURIComponent("GitHub sign-in expired. Try again.")}`)
-    }
+    if (!code) return HttpServerResponse.redirect(pending.back)
     const signedIn = yield* GitHub.exchange(code).pipe(Effect.option)
-    if (signedIn._tag === "None") return HttpServerResponse.redirect(`${pending.back}${pending.back.includes("?") ? "&" : "?"}error=github`)
+    if (signedIn._tag === "None") return failed("GitHub didn't finish signing you in. Try again.")
     const { user, installed } = signedIn.value
     if (!installed) {
       yield* Session.write({ ...session, user })

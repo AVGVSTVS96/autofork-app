@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, type ForkState, Problem, type Repo, type Run } from "../shared/api.ts"
+import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
 
@@ -190,6 +191,10 @@ export const prepare = (user: User, owner: string, name: string, into: string | 
     )
     if (upstream.private) return yield* new Problem({ message: "autofork works with public repos." })
     if (upstream.owner.login === place) return yield* new Problem({ message: "That repo is already yours. Name the repo you'd fork." })
+    if (!installed.some((each) => each.account.login === place)) {
+      const { appSlug } = yield* Env
+      return { owner: place, name: upstream.name, status: "install", link: `https://github.com/apps/${appSlug}/installations/new`, places } satisfies ForkState
+    }
     const fork = yield* findFork(user, upstream, place).pipe(Effect.catch(problem("GitHub couldn't make the fork. Try again in a moment.")))
     if (!fork) {
       return { owner: place, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork`, places } satisfies ForkState
