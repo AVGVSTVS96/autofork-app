@@ -170,6 +170,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .row.ctx { color: var(--ink-2); }
 .ok { color: var(--add); }
 .changes { display: grid; gap: 3px; }
+.paused { border: 1px dashed var(--hair); }
+.paused .row { color: var(--ink-3); }
+.paused p { padding: 0 0.8rem 0.7rem 2.9ch; font-size: 0.875rem; color: var(--ink-2); }
 
 .progress { display: grid; gap: 3px; padding: 0.75rem; }
 .progress-head { display: flex; justify-content: space-between; font-size: 0.875rem; color: var(--ink-3); padding: 0 0.2rem 0.5rem; }

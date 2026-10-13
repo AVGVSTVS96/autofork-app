@@ -13,7 +13,7 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
   const fork = Option.getOrNull(AsyncResult.value(result))
   const run = fork?.run && (!since || fork.run.startedAt >= since) ? fork.run : null
   const busy = !!since && (!run || run.status !== "completed")
-  const working = busy || fork?.changes.some((change) => !change.built) || run?.status === "in_progress" || run?.status === "queued"
+  const working = busy || fork?.changes.some((change) => change.state === "building") || run?.status === "in_progress" || run?.status === "queued"
 
   useEffect(() => {
     const timer = setInterval(refresh, working ? 3000 : 30000)
@@ -65,11 +65,31 @@ const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: bo
 
       <section className="changes">
         {fork.changes.length ? (
-          fork.changes.map((change) => (
-            <Row key={change.id} kind={change.built ? "add" : "agent"} end={change.built ? <span className="ok">built</span> : <span>building</span>}>
-              {change.text}
-            </Row>
-          ))
+          fork.changes.map((change) =>
+            change.state === "paused" ? (
+              <div key={change.id} className="paused">
+                <Row kind="ctx" end={<span>paused</span>}>
+                  {change.text}
+                </Row>
+                <p>
+                  {fork.upstream ? fork.upstream.split("/")[1] : "The app"} does this now{change.upstream ? `: ${change.upstream}` : "."} autofork stopped
+                  applying it. Keep theirs, or ask for a different change.
+                  {change.issue ? (
+                    <>
+                      {" "}
+                      <a href={change.issue} target="_blank" rel="noreferrer">
+                        Details
+                      </a>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            ) : (
+              <Row key={change.id} kind={change.state === "built" ? "add" : "agent"} end={change.state === "built" ? <span className="ok">built</span> : <span>building</span>}>
+                {change.text}
+              </Row>
+            ),
+          )
         ) : (
           <Row kind="ctx">No changes yet.</Row>
         )}

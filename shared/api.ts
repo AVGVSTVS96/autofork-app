@@ -58,7 +58,13 @@ export const Run = Schema.Struct({
 })
 export type Run = typeof Run.Type
 
-export const Change = Schema.Struct({ id: Schema.String, text: Schema.String, built: Schema.Boolean })
+export const Change = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  state: Schema.Literals(["built", "building", "paused"]),
+  upstream: Schema.NullOr(Schema.String),
+  issue: Schema.NullOr(Schema.String),
+})
 export type Change = typeof Change.Type
 
 export const Fork = Schema.Struct({

@@ -11,6 +11,7 @@ type GitHubRepo = {
   description: string | null
   stargazers_count: number
   default_branch: string
+  has_issues: boolean
   created_at: string
   fork: boolean
   private: boolean
@@ -85,6 +86,7 @@ const workflow = (branch: string, setup: ReadonlyArray<string>) =>
     "",
     "permissions:",
     "  contents: write",
+    "  issues: write",
     "  id-token: write",
     "",
     "concurrency: autofork",
@@ -233,6 +235,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
     yield* GitHub.setSecret(user.token, owner, name, SECRETS[agent], credential)
     yield* GitHub.deleteSecret(user.token, owner, name, SECRETS[agent === "claude" ? "chatgpt" : "claude"])
     yield* GitHub.request(user.token, "PUT", `/repos/${owner}/${name}/actions/permissions`, { enabled: true, allowed_actions: "all" })
+    if (!repo.has_issues) yield* GitHub.request(user.token, "PATCH", `/repos/${owner}/${name}`, { has_issues: true }).pipe(Effect.ignore)
 
     const control = yield* listDir(user.token, owner, name, ".autofork")
     const managed = control.some((entry) => entry.name === "config.json")
@@ -244,7 +247,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
       Effect.map((content) => Buffer.from(content, "base64").toString()),
       Effect.orElseSucceed(() => ""),
     )
-    if (!managed || !flow.includes(SECRETS[agent])) {
+    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write")) {
       const upstream = repo.parent?.full_name ?? `${owner}/${name}`
       const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
       files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch, setupSteps(root)) })
@@ -294,7 +297,7 @@ const story = (raw: string, name: (id: string) => string) => {
     let match: RegExpMatchArray | null
     if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
     if ((match = line.match(/^healed (\S+)$/))) return [`Rebuilt "${name(match[1]!)}" on the new release`]
-    if ((match = line.match(/^dropped (\S+): (.+)$/))) return [`Dropped "${name(match[1]!)}": ${match[2]}`]
+    if ((match = line.match(/^upstream has (\S+): (.+)$/))) return [`Paused "${name(match[1]!)}": ${match[2]}`]
     if (/^already up to date/.test(line)) return ["Already current"]
     if ((match = line.match(/^(\S+) doesn't apply/))) return [`"${name(match[1]!)}" waits for a run that can rebuild it`]
     if ((match = line.match(/^autofork: (.+)$/)) && !line.startsWith("autofork: sync ")) return [match[1]!]
@@ -342,16 +345,34 @@ export const status = (owner: string, name: string, viewer: User | undefined) =>
       Effect.catch(problem(`There's no fork at github.com/${owner}/${name}.`)),
     )
     const control = yield* listDir(token, owner, name, ".autofork")
+    const issues = yield* GitHub.request<{ title: string; html_url: string; pull_request?: unknown }[]>(
+      token,
+      "GET",
+      `/repos/${owner}/${name}/issues?state=open&per_page=100`,
+    ).pipe(
+      Effect.map((list) => new Map(list.map((issue) => [issue.title, issue.html_url]))),
+      Effect.orElseSucceed(() => new Map<string, string>()),
+    )
     const changes = yield* Effect.forEach(
       control.filter((entry) => entry.type === "dir"),
       (dir) =>
         Effect.gen(function* () {
           const files = yield* listDir(token, owner, name, `.autofork/${dir.name}`)
-          const doc = yield* GitHub.text(token, `/repos/${owner}/${name}/contents/.autofork/${dir.name}/PATCH.md`).pipe(
-            Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
-            Effect.orElseSucceed(() => ""),
-          )
-          return { id: dir.name, text: summary(doc), built: files.some((file) => file.name.endsWith(".patch") && file.size > 0) } satisfies Change
+          const read = (file: string) =>
+            GitHub.text(token, `/repos/${owner}/${name}/contents/.autofork/${dir.name}/${file}`).pipe(
+              Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
+              Effect.orElseSucceed(() => ""),
+            )
+          const doc = yield* read("PATCH.md")
+          const paused = files.some((file) => file.name === "UPSTREAM.md") ? summary(yield* read("UPSTREAM.md")) : null
+          const built = files.some((file) => file.name.endsWith(".patch") && file.size > 0)
+          return {
+            id: dir.name,
+            text: summary(doc),
+            state: paused !== null ? "paused" : built ? "built" : "building",
+            upstream: paused,
+            issue: paused !== null ? (issues.get(`${dir.name}: upstream does this now`) ?? null) : null,
+          } satisfies Change
         }),
       { concurrency: 6 },
     )
