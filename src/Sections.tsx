@@ -138,13 +138,13 @@ export const MineToday = () => (
       <li>
         <img src="/repos/buzz.png" alt="" />
         <span>
-          <b>Buzz</b>, but I can connect an agent that runs somewhere else
+          <b>Buzz</b>, but my agents share files with me, and I can suggest edits
         </span>
       </li>
       <li>
         <img src="/repos/claude.svg" alt="" />
         <span>
-          <b>Claude Code's Telegram plugin</b>, but every forum topic is its own session
+          <b>Claude Code's Telegram plugin</b>, but one bot runs many sessions, one for each forum topic
         </span>
       </li>
       <li>
