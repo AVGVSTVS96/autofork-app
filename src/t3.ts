@@ -105,6 +105,20 @@ const threads: Thread[] = [
     files: [4, 122, 91],
   },
   {
+    project: "hex-voice",
+    title: "Maintain it ourselves",
+    branch: "hex-voice/autofork",
+    time: "1h",
+    ctx: "62k",
+    ask: "David's Expo voice template is ours to maintain now. If he ever updates it, bring in anything clearly valuable, and weigh our changes more heavily where his opinions differ.",
+    worked: "Worked for 6m 05s",
+    reply: [
+      "Done. Every change we've made to his template, from calling your assistant to the orb on the Lock Screen, is now one patch, and its PATCH.md says what you said.",
+      "Until he pushes something new, the hourly check is git only and ends in a second.",
+    ],
+    files: [5, 80593, 0],
+  },
+  {
     project: "autofork",
     title: "Say it's an autofork on GitHub",
     branch: "main",
@@ -156,7 +170,7 @@ const promptCache = (t: Thread) => {
 export function mount(root: HTMLElement | null) {
   if (!root) return
   let active = 0
-  const compact = new Set<number>([3])
+  const compact = new Set<number>([4])
 
   root.innerHTML = `
     <aside class="t3-side">

@@ -9,6 +9,16 @@
     },
     "others": []
   },
+  "expogptlive": {
+    "repo": {
+      "owner": "davidmokos",
+      "name": "expo-gpt-live",
+      "description": "Expo SDK 57 voice app with GPT-Live 1 and AI Elements Persona.",
+      "stars": 137,
+      "avatar": "/repos/expo-gpt-live.png"
+    },
+    "others": []
+  },
   "herdr": {
     "repo": {
       "owner": "herdrdev",

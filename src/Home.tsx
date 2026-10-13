@@ -12,6 +12,7 @@ import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Examp
 
 const EXAMPLES: ReadonlyArray<Example> = [
   { app: "T3 Code", icon: "t3code", change: "always show context usage" },
+  { app: "expo-gpt-live", icon: "expo-gpt-live", change: "call my own assistant instead" },
   { app: "herdr", icon: "herdr", change: "show each pane's ID on its border" },
   { app: "Ghostty", icon: "ghostty", change: "keep scrollback after a restart" },
   { app: "Buzz", icon: "buzz", change: "let my agents share files with me" },

@@ -67,6 +67,7 @@ export const resolve = (q: string, token: GitHub.Token) =>
 
 const KNOWN: Record<string, { verify: string }> = {
   "pingdotgg/t3code": { verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck" },
+  "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
 }
 
 const setupSteps = (files: ReadonlySet<string>) => {

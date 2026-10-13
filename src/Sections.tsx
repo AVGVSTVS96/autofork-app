@@ -130,6 +130,12 @@ export const MineToday = () => (
     <div className="t3" data-t3 />
     <ul className="asks">
       <li>
+        <img src="/repos/expo-gpt-live.png" alt="" />
+        <span>
+          <b>expo-gpt-live</b>, an Expo voice app template, but it calls my assistant, and I maintain it now
+        </span>
+      </li>
+      <li>
         <img src="/repos/herdr.png" alt="" />
         <span>
           <b>herdr</b>, but every pane shows its ID on its border
