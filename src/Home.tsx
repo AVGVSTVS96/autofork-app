@@ -12,12 +12,12 @@ import { ClaudeIcon, Composer, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type 
 const EXAMPLES: ReadonlyArray<Example> = [
   { app: "T3 Code", icon: "t3code", change: "always show context usage" },
   { app: "herdr", icon: "herdr", change: "show each pane's ID on its border" },
-  { app: "Ghostty", icon: "ghostty", change: "keep split sizes after a restart" },
+  { app: "Ghostty", icon: "ghostty", change: "keep scrollback after a restart" },
   { app: "Buzz", icon: "buzz", change: "connect an agent that runs somewhere else" },
-  { app: "pi", icon: "pi", change: "show what each turn cost" },
-  { app: "cmux", icon: "cmux", change: "ping my phone when an agent finishes" },
+  { app: "pi", icon: "pi", change: "compact long chats with a cheaper model" },
+  { app: "cmux", icon: "cmux", change: "ping my phone when an agent needs me" },
   { app: "tmux", icon: "tmux", change: "show each agent's state in the status bar" },
-  { app: "UTM", icon: "utm", change: "list running VMs in the menu bar" },
+  { app: "UTM", icon: "utm", change: "pass Cmd-Q and Cmd-W through to the VM" },
 ]
 
 const Headline = () => (
