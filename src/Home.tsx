@@ -4,18 +4,23 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import type { ForkState, Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { Bar, ClaudeIcon, Composer, GitHubIcon, OpenAIIcon, stars } from "./ui.tsx"
+import { Bar, ClaudeIcon, Composer, GitHubIcon, OpenAIIcon, stars, type Example } from "./ui.tsx"
 
-const EXAMPLE = "T3 Code, but always show context usage"
+const EXAMPLES: ReadonlyArray<Example> = [
+  { app: "T3 Code", icon: "t3code", change: "always show context usage" },
+  { app: "herdr", icon: "herdr", change: "show each pane's ID on its border" },
+  { app: "Ghostty", icon: "ghostty", change: "keep split sizes after a restart" },
+  { app: "Buzz", icon: "buzz", change: "connect an agent that runs somewhere else" },
+  { app: "pi", icon: "pi", change: "show what each turn cost" },
+  { app: "cmux", icon: "cmux", change: "ping my phone when an agent finishes" },
+  { app: "tmux", icon: "tmux", change: "show each agent's state in the status bar" },
+  { app: "UTM", icon: "utm", change: "list running VMs in the menu bar" },
+]
 
 export const Home = ({ q }: { q: string }) => {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(q)
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    const text = draft.trim() || EXAMPLE
-    void navigate({ to: "/", search: { q: text } })
-  }
+  const submit = (text: string) => void navigate({ to: "/", search: { q: text } })
   return (
     <>
       <Bar />
@@ -25,7 +30,7 @@ export const Home = ({ q }: { q: string }) => {
           <span className="you">Keep their updates.</span>
         </h1>
         {q ? null : <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>}
-        <Composer value={draft} onChange={setDraft} onSubmit={submit} placeholder={EXAMPLE} label="An open source app and what you'd change" action="Fork it" autoFocus={!q} />
+        <Composer value={draft} onChange={setDraft} onSubmit={submit} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
         {q ? <Flow key={q} q={q} /> : <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>}
       </main>
     </>

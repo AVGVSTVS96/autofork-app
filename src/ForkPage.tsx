@@ -1,7 +1,7 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import * as Option from "effect/Option"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { Bar, ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, OpenAIIcon } from "./ui.tsx"
@@ -75,20 +75,25 @@ const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: bo
         {fork.changes.length ? (
           fork.changes.map((change) =>
             change.state === "paused" ? (
-              <Item key={change.id} state="paused" end="paused">
+              <Item
+                key={change.id}
+                state="paused"
+                end="paused"
+                detail={
+                  <p className="why">
+                    {change.upstream ?? `${app} does this now.`} autofork stopped applying it. Keep theirs, or ask for a different change.
+                    {change.issue ? (
+                      <>
+                        {" "}
+                        <a href={change.issue} target="_blank" rel="noreferrer">
+                          Details
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
+                }
+              >
                 {change.text}
-                <p className="why">
-                  {fork.upstream ? fork.upstream.split("/")[1] : "The app"} does this now{change.upstream ? `: ${change.upstream}` : "."} autofork stopped
-                  applying it. Keep theirs, or ask for a different change.
-                  {change.issue ? (
-                    <>
-                      {" "}
-                      <a href={change.issue} target="_blank" rel="noreferrer">
-                        Details
-                      </a>
-                    </>
-                  ) : null}
-                </p>
               </Item>
             ) : (
               <Item key={change.id} state={change.state === "built" ? "ok" : "now"} end={change.state}>
@@ -204,10 +209,9 @@ const More = ({ owner, name }: { owner: string; name: string }) => {
   const add = useAtomSet(client.addChange, { mode: "promiseExit" })
   const [change, setChange] = useState("")
   const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null })
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
+  const submit = async (text: string) => {
     setState({ busy: true, error: null })
-    const exit = await add({ params: { owner, name }, payload: { change } })
+    const exit = await add({ params: { owner, name }, payload: { change: text } })
     try {
       client.unwrap(exit)
       setChange("")

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import type { FormEvent, ReactNode } from "react"
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import logo from "./svg/autofork.svg?raw"
 import claude from "./svg/claude.svg?raw"
 import openai from "./svg/openai.svg?raw"
@@ -20,6 +20,10 @@ export const Bar = ({ children }: { children?: ReactNode }) => (
   </header>
 )
 
+export type Example = { app: string; icon: string; change: string }
+
+const sentence = (example: Example) => `${example.app}, but ${example.change}`
+
 export const Composer = ({
   value,
   onChange,
@@ -28,30 +32,171 @@ export const Composer = ({
   label,
   action,
   disabled,
-  autoFocus,
+  examples,
 }: {
   value: string
   onChange: (value: string) => void
-  onSubmit: (event: FormEvent) => void
-  placeholder: string
+  onSubmit: (text: string) => void
+  placeholder?: string
   label: string
   action: string
   disabled?: boolean
-  autoFocus?: boolean
-}) => (
-  <form className="ask" onSubmit={onSubmit}>
-    <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={label} autoComplete="off" autoFocus={autoFocus} />
-    <button type="submit" disabled={disabled}>
-      {action}
-    </button>
-  </form>
-)
+  examples?: ReadonlyArray<Example>
+}) => {
+  const [current, setCurrent] = useState(0)
+  const [idle, setIdle] = useState(true)
+  const resume = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const live = !!examples && idle && !value
+  const fallback = examples ? sentence(examples[current]!) : ""
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const text = value.trim() || fallback
+    if (text && !disabled) onSubmit(text)
+  }
+  return (
+    <form className="ask" onSubmit={submit}>
+      <label className="field" data-value={value}>
+        <textarea
+          rows={1}
+          value={value}
+          onChange={(event) => onChange(event.target.value.replace(/\n/g, " "))}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            event.currentTarget.form?.requestSubmit()
+          }}
+          onFocus={() => {
+            clearTimeout(resume.current)
+            setIdle(false)
+          }}
+          onBlur={() => {
+            resume.current = setTimeout(() => setIdle(true), 1400)
+          }}
+          placeholder={live ? "" : (placeholder ?? fallback)}
+          aria-label={label}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {examples ? <Typer examples={examples} live={live} onLand={setCurrent} /> : null}
+      </label>
+      <button type="submit" disabled={disabled}>
+        {action}
+      </button>
+    </form>
+  )
+}
 
-export const Item = ({ state, children, end }: { state: "ok" | "now" | "wait" | "bad" | "paused"; children: ReactNode; end?: ReactNode }) => (
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; live: boolean; onLand: (index: number) => void }) => {
+  const root = useRef<HTMLSpanElement>(null)
+  const badge = useRef<HTMLSpanElement>(null)
+  const reel = useRef<HTMLSpanElement>(null)
+  const typed = useRef<HTMLSpanElement>(null)
+  const current = useRef(0)
+
+  useEffect(() => {
+    const box = root.current!
+    const chip = badge.current!
+    const strip = reel.current!
+    const text = typed.current!
+    let on = live
+
+    const item = (example: Example) => {
+      const span = document.createElement("span")
+      const img = document.createElement("img")
+      img.src = `/repos/${example.icon}.png`
+      img.alt = ""
+      span.append(img, example.app)
+      return span
+    }
+    const fit = () => {
+      chip.style.width = `${(strip.lastElementChild as HTMLElement).offsetWidth + 17}px`
+    }
+    const land = (index: number) => {
+      strip.style.transition = "none"
+      strip.style.transform = "none"
+      strip.replaceChildren(item(examples[index]!))
+      current.current = index
+      onLand(index)
+      fit()
+    }
+    const roll = async (to: number) => {
+      const pass = examples
+        .map((_, i) => i)
+        .filter((i) => i !== current.current && i !== to)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 4)
+      const items = [current.current, ...pass, to]
+      strip.replaceChildren(...items.map((i) => item(examples[i]!)))
+      strip.getBoundingClientRect()
+      strip.style.transition = "transform 900ms cubic-bezier(.25,.75,.2,1)"
+      strip.style.transform = `translateY(${-(items.length - 1) * 32}px)`
+      fit()
+      await wait(920)
+      if (on) land(to)
+    }
+    const type = async (line: string) => {
+      box.classList.add("typing")
+      for (let i = 1; i <= line.length && on; i++) {
+        text.textContent = line.slice(0, i)
+        await wait(line[i - 1] === " " ? 70 : 28 + Math.random() * 38)
+      }
+      box.classList.remove("typing")
+    }
+    const erase = async () => {
+      box.classList.add("typing")
+      while (text.textContent && on) {
+        text.textContent = text.textContent.slice(0, -2)
+        await wait(14)
+      }
+      box.classList.remove("typing")
+    }
+    const play = async () => {
+      const change = () => `but ${examples[current.current]!.change}`
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return void (text.textContent = change())
+      text.textContent = ""
+      await wait(700)
+      while (on) {
+        await type(change())
+        await wait(2600)
+        if (!on) return
+        await erase()
+        if (!on) return
+        await roll((current.current + 1) % examples.length)
+        await wait(160)
+      }
+    }
+
+    if (!strip.firstChild) {
+      land(current.current)
+      void document.fonts.ready.then(fit)
+    }
+    if (on) void play()
+    return () => {
+      on = false
+      box.classList.remove("typing")
+      land(current.current)
+    }
+  }, [live])
+
+  return (
+    <span ref={root} className={live ? "typer live" : "typer"} aria-hidden="true">
+      <span ref={badge} className="badge">
+        <span ref={reel} className="reel" />
+      </span>
+      <span ref={typed} className="typed" />
+      <i className="caret" />
+    </span>
+  )
+}
+
+export const Item = ({ state, children, end, detail }: { state: "ok" | "now" | "wait" | "bad" | "paused"; children: ReactNode; end?: ReactNode; detail?: ReactNode }) => (
   <li className={`item ${state}`}>
     <i aria-hidden="true" />
     <div className="body">{children}</div>
     {end ? <span className="end">{end}</span> : null}
+    {detail ? <div className="detail">{detail}</div> : null}
   </li>
 )
 
