@@ -46,11 +46,13 @@ const search = (app: string, token: GitHub.Token) =>
     const hit = searched.get(key)
     if (hit && Date.now() - hit.at < 3_600_000) return hit.repos
     const query = new URLSearchParams({ q: `${app.trim()} fork:false is:public`, sort: "stars", per_page: "10" })
-    const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(
-      Effect.catch(problem("GitHub search is busy. Name the repo as owner/name instead.")),
-    )
-    const repos = found.items.map(toRepo)
-    searched.set(key, { repos, at: Date.now() })
+    const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(Effect.option)
+    if (found._tag === "None") {
+      if (hit) return hit.repos
+      return yield* new Problem({ message: "GitHub search is busy. Name the repo as owner/name instead." })
+    }
+    const repos = found.value.items.map(toRepo)
+    keep(searched, key, { repos, at: Date.now() })
     return repos
   })
 
