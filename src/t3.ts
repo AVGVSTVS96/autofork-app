@@ -4,36 +4,80 @@ import { claudePath } from "./claude-path.ts"
    The threads switch, and the context button toggles compact-before-send like the real one. */
 
 const icon = (body: string, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`
+const folderPath = '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'
+const panel = '<rect width="18" height="18" x="3" y="3" rx="2"/>'
 const I = {
-  panel: icon('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>'),
-  search: icon('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'),
-  filter: icon('<path d="M3 6h18M7 12h10M10 18h4"/>'),
-  pen: icon('<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9a2 2 0 0 1-.85.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z"/>'),
+  sidebar: icon('<path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM9 3v18M16 15l-3-3 3-3"/>'),
+  search: icon('<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>'),
+  filter: icon('<path d="M2 5h20M6 12h12M9 19h6"/>'),
+  addProject: icon(`<path d="M12 10v6M9 13h6"/>${folderPath}`),
+  pen: icon('<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>'),
   down: icon('<path d="m6 9 6 6 6-6"/>', "chev"),
   right: icon('<path d="m9 18 6-6-6-6"/>', "chev"),
-  brain: icon('<path d="M12 5a3 3 0 1 0-6 .13 4 4 0 0 0-2.52 5.77 4 4 0 0 0 .55 6.59A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 6 .13 4 4 0 0 1 2.52 5.77 4 4 0 0 1-.55 6.59A4 4 0 1 1 12 18Z"/>'),
-  lock: icon('<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>'),
-  clip: icon('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'),
-  minimize: icon('<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>'),
-  branch: icon('<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>'),
-  diff: icon('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6M12 13V7M9 17h6"/>'),
-  gear: icon('<circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>'),
-  prs: icon('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/>'),
-  usage: icon('<path d="M18 20V10M12 20V4M6 20v-6"/>'),
-  menu: icon('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 8h10M7 12h10M7 16h10"/>'),
-  bottom: icon('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/>'),
-  side: icon('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>'),
-  working: icon('<circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3.2"/>', "spin"),
-  done: icon('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'),
+  brain: icon('<path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>'),
+  lock: icon('<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>'),
+  more: icon('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'),
+  clip: icon('<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>'),
+  minimize: icon('<path d="m14 10 7-7M20 10h-6V4M3 21l7-7M4 14h6v6"/>'),
+  branch: icon('<path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>'),
+  worktree: icon('<path d="M18 19a5 5 0 0 1-5-5v8"/><path d="M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5"/><circle cx="13" cy="12" r="2"/><circle cx="20" cy="19" r="2"/>'),
+  inWorktree: icon(`<circle cx="12" cy="13" r="2"/>${folderPath}<path d="M14 13h3M7 13h3"/>`),
+  checkout: icon(folderPath),
+  diff: icon('<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M9 10h6M12 13V7M9 17h6"/>'),
+  gear: icon('<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>'),
+  prs: icon('<circle cx="5" cy="6" r="3"/><path d="M5 9v12"/><circle cx="19" cy="18" r="3"/><path d="m15 9-3-3 3-3M12 6h5a2 2 0 0 1 2 2v7"/>'),
+  usage: icon('<path d="M5 21v-6M12 21V3M19 21V9"/>'),
+  menu: icon(`${panel}<path d="M7 8h10M7 12h10M7 16h10"/>`),
+  bottom: icon(`${panel}<path d="M3 15h18"/>`),
+  side: icon(`${panel}<path d="M15 3v18"/>`),
+  working: icon('<path d="M10.1 2.182a10 10 0 0 1 3.8 0M13.9 21.818a10 10 0 0 1-3.8 0M17.609 3.721a10 10 0 0 1 2.69 2.7M2.182 13.9a10 10 0 0 1 0-3.8M20.279 17.609a10 10 0 0 1-2.7 2.69M21.818 10.1a10 10 0 0 1 0 3.8M3.721 6.391a10 10 0 0 1 2.7-2.69M6.391 20.279a10 10 0 0 1-2.69-2.7"/>', "spin"),
 }
 const claude = `<svg class="claude" viewBox="0 0 256 257" aria-hidden="true"><path d="${claudePath}"/></svg>`
 const t3 = `<svg class="t3-mark" viewBox="15.5309 37 94.3941 56.96" aria-hidden="true"><path d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"/></svg>`
-const mono = (text: string, hue: string) => `<svg class="mono" viewBox="0 0 16 16" style="color:${hue}" aria-hidden="true"><rect width="16" height="16" rx="4"/><text x="8" y="11.2" text-anchor="middle">${text}</text></svg>`
+
+/* T3 Code's project badge: its monogram and color come from the project's name (projectIdentity.ts),
+   unless the project has its own icon set, like my autofork. Colors are Tailwind's -600 in light, -400 in dark. */
+const hues: Record<string, [string, string]> = {
+  gray: ["44.6% 0.03 256.802", "70.7% 0.022 261.325"],
+  red: ["57.7% 0.245 27.325", "70.4% 0.191 22.216"],
+  orange: ["64.6% 0.222 41.116", "75% 0.183 55.934"],
+  amber: ["66.6% 0.179 58.318", "82.8% 0.189 84.429"],
+  yellow: ["68.1% 0.162 75.834", "85.2% 0.199 91.936"],
+  lime: ["64.8% 0.2 131.684", "84.1% 0.238 128.85"],
+  green: ["62.7% 0.194 149.214", "79.2% 0.209 151.711"],
+  emerald: ["59.6% 0.145 163.225", "76.5% 0.177 163.223"],
+  teal: ["60% 0.118 184.704", "77.7% 0.152 181.912"],
+  cyan: ["60.9% 0.126 221.723", "78.9% 0.154 211.53"],
+  sky: ["58.8% 0.158 241.966", "74.6% 0.16 232.661"],
+  blue: ["54.6% 0.245 262.881", "70.7% 0.165 254.624"],
+  indigo: ["51.1% 0.262 276.966", "67.3% 0.182 276.935"],
+  violet: ["54.1% 0.281 293.009", "70.2% 0.183 293.541"],
+  purple: ["55.8% 0.288 302.321", "71.4% 0.203 305.504"],
+  fuchsia: ["59.1% 0.293 322.896", "74% 0.238 322.16"],
+  pink: ["59.2% 0.249 0.584", "71.8% 0.202 349.761"],
+  rose: ["58.6% 0.253 17.585", "71.2% 0.194 13.428"],
+}
+const ownIcons: Record<string, { text: string; color: string }> = { autofork: { text: "AF", color: "violet" } }
+
+const identity = (project: string) => {
+  if (ownIcons[project]) return ownIcons[project]
+  const words = project.match(/[\p{L}\p{N}]+/gu) ?? []
+  const glyphs = Array.from(words[0] ?? "P")
+  const second = glyphs.slice(1).find((g) => /\p{N}/u.test(g)) ?? (words.length > 1 ? Array.from(words.at(-1)!)[0] : glyphs.at(-1))
+  const names = Object.keys(hues)
+  let i = 0
+  for (const g of project.toLowerCase()) i = (i * 31 + g.codePointAt(0)!) % names.length
+  return { text: `${glyphs[0]}${second}`.toUpperCase(), color: names[i]! }
+}
+
+const mono = (project: string) => {
+  const { text, color } = identity(project)
+  const [light, dark] = hues[color]!
+  return `<svg class="mono" viewBox="0 0 16 16" style="color:light-dark(oklch(${light}),oklch(${dark}))" aria-hidden="true"><text x="8" y="10.8" text-anchor="middle" font-size="8.25" textLength="${text.length === 1 ? 6 : 12}" lengthAdjust="spacingAndGlyphs">${text}</text></svg>`
+}
 
 type Thread = {
   project: string
-  mark: string
-  hue: string
   title: string
   branch: string
   time: string
@@ -48,8 +92,6 @@ type Thread = {
 const threads: Thread[] = [
   {
     project: "t3code",
-    mark: "T3",
-    hue: "var(--h-blue)",
     title: "Always show context usage",
     branch: "t3code/context-usage",
     time: "2h",
@@ -64,8 +106,6 @@ const threads: Thread[] = [
   },
   {
     project: "autofork",
-    mark: "af",
-    hue: "var(--h-violet)",
     title: "Say it's an autofork on GitHub",
     branch: "main",
     time: "",
@@ -78,8 +118,6 @@ const threads: Thread[] = [
   },
   {
     project: "fleet",
-    mark: "fl",
-    hue: "var(--h-green)",
     title: "Add clear work status guidance",
     branch: "main",
     time: "5h",
@@ -91,8 +129,6 @@ const threads: Thread[] = [
   },
   {
     project: "react-shiki",
-    mark: "rs",
-    hue: "var(--h-amber)",
     title: "Accept a cache from the app",
     branch: "feat/highlight-cache",
     time: "3d",
@@ -107,6 +143,16 @@ const threads: Thread[] = [
   },
 ]
 
+const inWorktree = (t: Thread) => t.branch !== "main"
+
+/* The fork's tooltip line: Claude's prompt cache lasts an hour from the thread's last turn */
+const promptCache = (t: Thread) => {
+  const hours = t.working ? 0 : parseInt(t.time) * (t.time.endsWith("d") ? 24 : 1)
+  if (hours < 1) return "Prompt cache warm, 59m left"
+  const expired = hours - 1
+  return `Prompt cache expired ${expired === 0 ? "just now" : expired < 24 ? `${expired}h ago` : `${Math.floor(expired / 24)}d ago`}`
+}
+
 export function mount(root: HTMLElement | null) {
   if (!root) return
   let active = 0
@@ -114,14 +160,14 @@ export function mount(root: HTMLElement | null) {
 
   root.innerHTML = `
     <aside class="t3-side">
-      <div class="t3-title"><i class="lights"><b></b><b></b><b></b></i><button class="t3-icon" tabindex="-1">${I.panel}</button><span class="t3-brand">${t3}<span>Code</span></span></div>
-      <div class="t3-tools"><span class="t3-search">${I.search}Search</span><button class="t3-icon" tabindex="-1">${I.filter}</button><button class="t3-icon" tabindex="-1">${I.pen}</button></div>
+      <div class="t3-title"><i class="lights"><b></b><b></b><b></b></i><button class="t3-icon" tabindex="-1">${I.sidebar}</button><span class="t3-brand">${t3}<span>Code</span></span></div>
+      <div class="t3-tools"><span class="t3-search">${I.search}Search</span><button class="t3-icon" tabindex="-1">${I.filter}</button><button class="t3-icon" tabindex="-1">${I.addProject}</button><button class="t3-icon" tabindex="-1">${I.pen}</button></div>
       <ul class="t3-threads">${threads
         .map(
-          (t, i) => `<li><button class="t3-row" data-i="${i}">
-            <span class="r1">${mono(t.mark, t.hue)}<span class="proj">${t.project}</span><span class="when">${t.working ? `${I.working}<span class="live">Working</span>` : t.time}</span></span>
+          (t, i) => `<li><button class="t3-row${t.working ? " working" : ""}" data-i="${i}">
+            <span class="r1">${mono(t.project)}<span class="proj">${t.project}</span><span class="when">${t.working ? `<span class="live">${I.working}Working</span>` : t.time}</span></span>
             <span class="r2">${t.title}</span>
-            <span class="r3">${I.branch}<span class="br">${t.branch}</span>${claude}</span>
+            <span class="r3">${inWorktree(t) ? I.worktree : ""}<span class="br">${t.branch}</span>${claude}</span>
           </button></li>`,
         )
         .join("")}</ul>
@@ -129,22 +175,22 @@ export function mount(root: HTMLElement | null) {
       <div class="t3-foot"><button class="t3-icon" tabindex="-1">${I.gear}</button><button class="t3-icon" tabindex="-1">${I.prs}</button><button class="t3-icon" tabindex="-1">${I.usage}</button></div>
     </aside>
     <div class="t3-main">
-      <div class="t3-tabs">${threads.map((t, i) => `<button class="t3-tab" data-i="${i}">${mono(t.mark, t.hue)}${t.project}</button>`).join("")}</div>
+      <div class="t3-tabs">${threads.map((t, i) => `<button class="t3-tab" data-i="${i}">${mono(t.project)}${t.project}</button>`).join("")}</div>
       <header class="t3-head"><span class="crumb"></span><span class="t3-panels"><button class="t3-icon" tabindex="-1">${I.menu}</button><button class="t3-icon" tabindex="-1">${I.bottom}</button><button class="t3-icon" tabindex="-1">${I.side}</button></span></header>
       <div class="t3-lane"><div class="t3-msgs"></div></div>
       <div class="t3-composer">
         <div class="t3-box">
           <span class="t3-ph">Ask anything, @tag files/folders, $use skills, or / for commands</span>
           <div class="t3-bar">
-            <span class="t3-left"><span class="chip">${claude}Claude Opus 5.5${I.down}</span><i class="sep"></i><span class="chip">${I.brain}High${I.down}</span><i class="sep"></i><span class="chip">${I.lock}Full access${I.down}</span></span>
+            <span class="t3-left"><span class="chip">${claude}Claude Opus 5.5${I.down}</span><i class="sep"></i><span class="chip">${I.brain}High${I.down}</span><i class="sep"></i><span class="chip">${I.lock}Full access${I.down}</span><button class="t3-icon more" tabindex="-1">${I.more}</button></span>
             <span class="t3-right">
-              <button class="t3-icon" tabindex="-1">${I.clip}</button>
+              <button class="t3-icon clip" tabindex="-1">${I.clip}</button>
               <span class="ctx-wrap"><button class="ctx" aria-pressed="false">${I.minimize}<span class="n"></span></button><span class="tip"></span><span class="yours-label">my change</span></span>
               <span class="send"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"/></svg></span>
             </span>
           </div>
         </div>
-        <div class="t3-branch"><span>${I.branch}Worktree</span><span class="b"></span></div>
+        <div class="t3-branch"><span class="env"></span><span class="b"></span></div>
       </div>
     </div>`
 
@@ -154,6 +200,7 @@ export function mount(root: HTMLElement | null) {
   const crumb = root.querySelector<HTMLElement>(".crumb")!
   const ctx = root.querySelector<HTMLButtonElement>(".ctx")!
   const tip = root.querySelector<HTMLElement>(".tip")!
+  const env = root.querySelector<HTMLElement>(".t3-branch .env")!
   const branch = root.querySelector<HTMLElement>(".t3-branch .b")!
 
   const paintCtx = () => {
@@ -163,7 +210,7 @@ export function mount(root: HTMLElement | null) {
     ctx.classList.toggle("warn", on)
     ctx.setAttribute("aria-pressed", String(on))
     ctx.setAttribute("aria-label", `Compact ${t.ctx} tokens of history before sending`)
-    tip.innerHTML = `${on ? `Next send compacts ${t.ctx} tokens first. Click to keep full history` : `Next send keeps all ${t.ctx} tokens. Click to compact first`}<span>Prompt cache is warm</span>`
+    tip.innerHTML = `<span>${on ? `Next send compacts ${t.ctx} tokens first. Click to keep full history` : `Next send keeps all ${t.ctx} tokens. Click to compact first`}</span><span>${promptCache(t)}</span>`
   }
 
   const show = (i: number) => {
@@ -171,14 +218,15 @@ export function mount(root: HTMLElement | null) {
     const t = threads[i]!
     rows.forEach((r, j) => r.classList.toggle("on", j === i))
     tabs.forEach((r, j) => r.classList.toggle("on", j === i))
-    crumb.innerHTML = `${mono(t.mark, t.hue)}<span class="cp">${t.project}</span><span class="slash">/</span><b>${t.title}</b>`
-    branch.textContent = t.branch
+    crumb.innerHTML = `${mono(t.project)}<span class="cp">${t.project}</span><span class="slash">/</span><b>${t.title}</b>`
+    env.innerHTML = inWorktree(t) ? `${I.inWorktree}Worktree` : `${I.checkout}Local checkout`
+    branch.innerHTML = `${I.branch}${t.branch}`
     msgs.classList.remove("in")
     msgs.innerHTML = `
       <p class="u">${t.ask}</p>
-      <p class="worked">${t.working ? `${I.working}` : ""}${t.worked}${I.right}</p>
+      <p class="worked"><span>${t.working ? I.working : ""}${t.worked}${I.right}</span></p>
       ${t.reply.map((p) => `<p class="a">${p}</p>`).join("")}
-      <div class="changed"><span>${I.right}${t.files[0]} changed file${t.files[0] === 1 ? "" : "s"} <em class="plus">+${t.files[1]}</em> <em class="minus">−${t.files[2]}</em></span><span class="open">${I.diff}Open diff</span></div>`
+      <div class="changed"><span>${t.files[0]} changed file${t.files[0] === 1 ? "" : "s"}<em><i class="plus">+${t.files[1]}</i><i class="minus">-${t.files[2]}</i></em></span><span class="open">${I.diff}Open diff</span></div>`
     requestAnimationFrame(() => msgs.classList.add("in"))
     paintCtx()
   }
