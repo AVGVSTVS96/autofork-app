@@ -19,7 +19,7 @@ export type Session = {
   readonly user?: User
   readonly signIn?: { readonly state: string; readonly back: string }
   readonly claude?: { readonly verifier: string; readonly state: string }
-  readonly chatgpt?: { readonly id: string; readonly code: string }
+  readonly chatgpt?: { readonly id: string; readonly code: string; readonly at?: number }
 }
 
 const COOKIE = "autofork"

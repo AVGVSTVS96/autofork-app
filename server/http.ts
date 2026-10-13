@@ -65,7 +65,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("chatgptStart", () =>
       Effect.gen(function* () {
         const device = yield* Agents.chatgptStart
-        yield* Session.update((session) => ({ ...session, chatgpt: { id: device.id, code: device.code } }))
+        yield* Session.update((session) => ({ ...session, chatgpt: { id: device.id, code: device.code, at: device.at } }))
         return { code: device.code, url: device.url }
       }),
     )
