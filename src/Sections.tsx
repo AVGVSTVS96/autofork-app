@@ -221,18 +221,11 @@ const posts = [
     when: "Oct 8",
     at: 0.78,
     to: "theo",
-    likedBy: "Theo",
     text: "auto patching/repo-maintenance is game-changing. i can fork and customize anything, the agents will autonomously track upstream and re-implement my changes",
   },
 ]
 
 const Paragraphs = ({ text }: { text: string }) => text.split("\n\n").map((p) => <p key={p}>{p}</p>)
-
-const Heart = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3.1 1.7-1.9 3.1-3.1 5.3-3.1 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z" />
-  </svg>
-)
 
 const XMark = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -264,12 +257,6 @@ export const History = () => (
                 <blockquote>
                   <Paragraphs text={post.quote} />
                 </blockquote>
-              )}
-              {post.likedBy && (
-                <span className="post-liked">
-                  <Heart />
-                  Liked by {post.likedBy}
-                </span>
               )}
             </a>
           </li>
