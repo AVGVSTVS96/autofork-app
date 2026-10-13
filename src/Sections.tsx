@@ -201,6 +201,45 @@ export const Yours = () => {
   )
 }
 
+const posts = [
+  {
+    id: "2085914855119396958",
+    when: "Aug 8",
+    at: 0.5,
+    to: "herdrdev",
+    text: "i have an agent-maintained herdr fork that tracks upstream and applies/rewrites patches–one of which adds support for pane id labels–and cuts patched nightlies.\n\njust a fun excuse to test out automating repo maintenance with PATCH.md files",
+  },
+  {
+    id: "2107421377334800815",
+    when: "Oct 6",
+    at: 0.73,
+    text: "automatic repo maintenance/patching is a cool technique i’ve been using to make forking and modifying existing projects more approachable\n\nbots track upstream and maintain the repo automatically\n\ni think it would be good to package this so anyone can set up their own auto-maintained fork",
+    quote: "i have an idea:\n\ntake open source repos that rarely merge/review contributor PRs and set up an auto maintenance bot to keep up with upstream while copying and merging good contributor PRs the maintainers never merge",
+  },
+  {
+    id: "2108047388304871934",
+    when: "Oct 8",
+    at: 0.78,
+    to: "theo",
+    likedBy: "Theo",
+    text: "auto patching/repo-maintenance is game-changing. i can fork and customize anything, the agents will autonomously track upstream and re-implement my changes",
+  },
+]
+
+const Paragraphs = ({ text }: { text: string }) => text.split("\n\n").map((p) => <p key={p}>{p}</p>)
+
+const Heart = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3.1 1.7-1.9 3.1-3.1 5.3-3.1 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z" />
+  </svg>
+)
+
+const XMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M18.9 1.15h3.68l-8.04 9.19L24 22.85h-7.4l-5.8-7.59-6.64 7.59H.47l8.6-9.83L0 1.15h7.6l5.24 6.93Zm-1.29 19.5h2.04L6.49 3.24H4.3Z" />
+  </svg>
+)
+
 export const History = () => (
   <section className="history">
     <h2 data-node>How it got here.</h2>
@@ -209,8 +248,33 @@ export const History = () => (
       data-lineage
       data-pi={facts.lineage.piPatcher.repo}
       data-patchmd={facts.lineage.patchMd.site}
-      role="img"
-      aria-label="pi-patcher in May, PATCH.md in June, then experimental forks of herdr, Claude Code's plugins, Buzz and T3 Code from July to October, then autofork in October"
-    />
+      data-label="pi-patcher in May, PATCH.md in June, then experimental forks of herdr, Claude Code's plugins, Buzz and T3 Code from July to October, then autofork in October"
+    >
+      <ol className="posts">
+        {posts.map((post) => (
+          <li key={post.id} data-at={post.at}>
+            <a href={`https://x.com/avgvstvs96/status/${post.id}`}>
+              <span className="post-head">
+                {post.when}
+                {post.to && <> · to @{post.to}</>}
+                <XMark />
+              </span>
+              <Paragraphs text={post.text} />
+              {post.quote && (
+                <blockquote>
+                  <Paragraphs text={post.quote} />
+                </blockquote>
+              )}
+              {post.likedBy && (
+                <span className="post-liked">
+                  <Heart />
+                  Liked by {post.likedBy}
+                </span>
+              )}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </div>
   </section>
 )

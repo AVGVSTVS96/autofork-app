@@ -208,15 +208,22 @@ const story = (root: HTMLElement) => {
   }
 }
 
-/* How it got here, drawn as a graph: two first tries, experimental forks off to the side, and autofork. */
+/* How it got here, drawn as a graph: two first tries, experimental forks off to the side, what got said along the way, and autofork. */
 
 const lineage = (root: HTMLElement) => {
   const links: Record<string, string> = { "pi-patcher": root.dataset.pi!, "PATCH.md": root.dataset.patchmd! }
+  const cards = [...root.querySelectorAll<HTMLElement>(".posts li")]
+  const posts = cards.map((card) => ({ card, at: Number(card.dataset.at) }))
+  let drawn: Element | undefined
 
   const draw = () => {
     const W = root.clientWidth
-    root.replaceChildren()
-    const s = svgEl(root, "svg", {}) as unknown as SVGSVGElement
+    const wide = W >= 1000
+    root.classList.toggle("wide", wide)
+    cards.forEach((c) => (c.style.top = ""))
+    drawn?.remove()
+    const s = svgEl(root, "svg", { role: "img", "aria-label": root.dataset.label! }) as unknown as SVGSVGElement
+    drawn = s
 
     const main = [
       { name: "pi-patcher", when: "May", at: 0.03 },
@@ -235,12 +242,19 @@ const lineage = (root: HTMLElement) => {
       return t
     }
     const linked = (name: string) => (links[name] ? svgEl(s, "a", { href: links[name]! }) : s)
+    const said = (cx: number, cy: number) => svgEl(s, "circle", { class: "p", cx, cy, r: 4.5 })
 
-    if (W >= 640) {
-      const H = 220, M = 64, E = 150
+    if (wide) {
+      const H = 260, M = 104, E = 190
       s.setAttribute("viewBox", `0 0 ${W} ${H}`)
+      s.setAttribute("height", String(H))
       const x = (f: number) => 8 + f * (W - 16)
       const out = x(0.31), back = x(0.92)
+      const list = cards[0]!.parentElement!, top = list.offsetTop + list.offsetHeight
+      for (const { card, at } of posts) {
+        const from = card.offsetLeft + card.offsetWidth / 2, y0 = card.offsetTop + card.offsetHeight - top
+        svgEl(s, "path", { class: "say", d: `M${from} ${y0}C${from} ${M * 0.6} ${x(at)} ${M * 0.4} ${x(at)} ${M}` })
+      }
       svgEl(s, "path", { class: "main", d: `M${x(0)} ${M}H${x(1)}` })
       svgEl(s, "path", { class: "exp", d: `M${out} ${M}C${out + 40} ${M} ${out + 30} ${E} ${out + 80} ${E}H${back - 80}C${back - 30} ${E} ${back - 40} ${M} ${back} ${M}` })
       label(s, out + 84, E - 16, "experimental forks", "group")
@@ -251,42 +265,59 @@ const lineage = (root: HTMLElement) => {
         label(linked(m.name), lx, M - 22, m.name, "", anchor)
         label(s, lx, M + 32, m.when, "when", anchor)
       }
+      for (const { at } of posts) said(x(at), M)
       for (const e of exp) {
         svgEl(s, "circle", { class: "e", cx: x(e.at), cy: E, r: 6 })
         label(s, x(e.at), E + 28, e.name, "small", "middle")
         label(s, x(e.at), E + 46, e.when, "when", "middle")
       }
-      s.setAttribute("height", String(H))
     } else {
-      const items = [{ ...main[0]!, lane: 0 }, { ...main[1]!, lane: 0 }, ...exp.map((e) => ({ ...e, lane: 1 })), { ...main[2]!, lane: 0 }]
-      const step = 58, X = 10, L = 46, H = items.length * step + 10
+      type Row = { name: string; when: string; at: number; lane: number; end?: boolean; card?: HTMLElement }
+      const rows: Row[] = [
+        { ...main[0]!, lane: 0 },
+        { ...main[1]!, lane: 0 },
+        ...[...exp.map((e) => ({ ...e, lane: 1 })), ...posts.map((p) => ({ name: "", when: "", at: p.at, lane: 0, card: p.card }))].sort((a, b) => a.at - b.at),
+        { ...main[2]!, lane: 0 },
+      ]
+      const step = 58, X = 10, L = 46, lead = 22
+      const ys: number[] = []
+      let y = 16
+      for (const row of rows) {
+        ys.push(y)
+        if (row.card) {
+          row.card.style.top = `${y - lead}px`
+          y += row.card.offsetHeight - lead + 36
+        } else y += step
+      }
+      const H = ys.at(-1)! + 10
       s.setAttribute("viewBox", `0 0 ${W} ${H}`)
       s.setAttribute("height", String(H))
-      const y = (i: number) => 16 + i * step
-      const out = y(1) + 24, back = y(items.length - 1) - 24
-      svgEl(s, "path", { class: "main", d: `M${X} ${y(0)}V${y(items.length - 1)}` })
+      const out = ys[1]! + 24, back = ys.at(-1)! - 24
+      svgEl(s, "path", { class: "main", d: `M${X} ${ys[0]}V${ys.at(-1)}` })
       svgEl(s, "path", { class: "exp", d: `M${X} ${out}C${X} ${out + 20} ${L} ${out + 10} ${L} ${out + 34}V${back - 34}C${L} ${back - 10} ${X} ${back - 20} ${X} ${back}` })
-      items.forEach((it, i) => {
+      rows.forEach((it, i) => {
+        if (it.card) return said(X, ys[i]!)
         const cx = it.lane ? L : X
-        svgEl(s, "circle", { class: it.lane ? "e" : "end" in it && it.end ? "n end" : "n", cx, cy: y(i), r: it.lane ? 6 : 7 })
-        label(it.lane ? s : linked(it.name), cx + 20, y(i) + 5, it.name, it.lane ? "small" : "")
-        label(s, W - 2, y(i) + 5, it.when, "when", "end")
+        svgEl(s, "circle", { class: it.lane ? "e" : it.end ? "n end" : "n", cx, cy: ys[i]!, r: it.lane ? 6 : 7 })
+        label(it.lane ? s : linked(it.name), cx + 20, ys[i]! + 5, it.name, it.lane ? "small" : "")
+        label(s, W - 2, ys[i]! + 5, it.when, "when", "end")
       })
     }
-    root.querySelectorAll("path").forEach((p) => p.setAttribute("pathLength", "1"))
-    root.querySelectorAll("circle").forEach((c, i) => {
+    s.querySelectorAll("path").forEach((p) => p.setAttribute("pathLength", "1"))
+    s.querySelectorAll("circle").forEach((c, i) => {
       c.style.setProperty("--r", `${c.getAttribute("r")}px`)
       c.style.setProperty("--d", `${300 + i * 140}ms`)
     })
+    cards.forEach((c, i) => c.style.setProperty("--d", `${900 + i * 220}ms`))
   }
 
   const sized = new ResizeObserver(draw)
-  sized.observe(root)
+  for (const el of [root, ...cards]) sized.observe(el)
   if (still()) {
     root.classList.add("in")
     return () => sized.disconnect()
   }
-  const seen = new IntersectionObserver(([e]) => e!.isIntersecting && root.classList.add("in"), { threshold: 0.4 })
+  const seen = new IntersectionObserver(([e]) => e!.isIntersecting && root.classList.add("in"), { rootMargin: "0px 0px -35% 0px" })
   seen.observe(root)
   return () => {
     sized.disconnect()
