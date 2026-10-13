@@ -22,6 +22,7 @@ export const Me = Schema.Struct({ login: Schema.String, avatar: Schema.String })
 
 export const Agent = Schema.Literals(["chatgpt", "claude"])
 export type Agent = typeof Agent.Type
+export const isAgent = Schema.is(Agent)
 
 export const ForkState = Schema.Struct({
   owner: Schema.String,

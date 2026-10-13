@@ -2,7 +2,7 @@ import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useNavigate } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
-import type { Agent, ForkState, Repo } from "../shared/api.ts"
+import { isAgent, type Agent, type ForkState, type Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
 import { start } from "./landing.ts"
@@ -19,8 +19,6 @@ const EXAMPLES: ReadonlyArray<Example> = [
   { app: "tmux", icon: "tmux", change: "show each agent's state in the status bar" },
   { app: "UTM", icon: "utm", change: "list running VMs in the menu bar" },
 ]
-
-export const isAgent = (value: unknown): value is Agent => value === "chatgpt" || value === "claude"
 
 export const Home = ({ q, agent }: { q: string; agent: Agent | undefined }) => {
   const navigate = useNavigate()

@@ -2,8 +2,8 @@ import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } fr
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { ForkPage } from "./ForkPage.tsx"
-import type { Agent } from "../shared/api.ts"
-import { Home, isAgent } from "./Home.tsx"
+import { isAgent, type Agent } from "../shared/api.ts"
+import { Home } from "./Home.tsx"
 import "./style.css"
 
 const root = createRootRoute({ component: Outlet })
