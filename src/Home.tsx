@@ -1,13 +1,14 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useNavigate } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
-import { isAgent, type Agent, type ForkState, type Repo } from "../shared/api.ts"
+import { useEffect, useRef, useState, type FormEvent } from "react"
+import { isAgent, split, type Agent, type ForkState, type Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
 import { start } from "./landing.ts"
 import { History, Meant, MineToday, Yours } from "./Sections.tsx"
-import { ClaudeIcon, Composer, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
+import { known, type Found } from "./known.ts"
+import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
 
 const EXAMPLES: ReadonlyArray<Example> = [
   { app: "T3 Code", icon: "t3code", change: "always show context usage" },
@@ -41,7 +42,6 @@ export const Home = ({ q, agent, error }: { q: string; agent: Agent | undefined;
 
 const Landing = () => {
   const ask = useAsk()
-  const [draft, setDraft] = useState("")
   const page = useRef<HTMLDivElement>(null)
   useEffect(() => start(page.current!), [])
   return (
@@ -55,10 +55,8 @@ const Landing = () => {
       <header className="hero">
         <Headline />
         <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>
-        <Composer
+        <Ask
           id="ask"
-          value={draft}
-          onChange={setDraft}
           onSubmit={(text, via) => ask(text, isAgent(via) ? via : undefined)}
           examples={EXAMPLES}
           label="An open source app and what you'd change"
@@ -93,18 +91,12 @@ const Landing = () => {
 
 const Start = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) => {
   const ask = useAsk()
-  const [draft, setDraft] = useState(q)
-  const [shown, setShown] = useState(q)
-  if (q !== shown) {
-    setShown(q)
-    setDraft(q)
-  }
   return (
     <div className="page bare">
       <Nav />
       <main className="start">
         <Headline />
-        <Composer value={draft} onChange={setDraft} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
+        <Ask key={q} initial={q} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
         <Flow key={q} q={q} agent={agent} error={error} />
       </main>
     </div>
@@ -112,48 +104,64 @@ const Start = ({ q, agent, error }: { q: string; agent: Agent | undefined; error
 }
 
 const Flow = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) => {
-  const resolved = useAtomValue(useMemo(() => client.resolve(q), [q]))
-  return AsyncResult.match(resolved, {
-    onInitial: () => <p className="note wait">Finding it on GitHub…</p>,
-    onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
-    onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} agent={agent} error={error} />,
-  })
+  const { app, change } = split(q)
+  const ready = known(app)
+  return ready ? (
+    <Plan found={ready} app={app} initialChange={change} agent={agent} error={error} />
+  ) : (
+    <Lookup app={app} initialChange={change} agent={agent} error={error} />
+  )
 }
 
-const Plan = ({
-  repo,
-  others,
-  initialChange,
-  agent,
-  error,
-}: {
-  repo: Repo
-  others: ReadonlyArray<Repo>
-  initialChange: string
-  agent: Agent | undefined
-  error: string | undefined
-}) => {
+type Asked = { app: string; initialChange: string; agent: Agent | undefined; error: string | undefined }
+
+const Lookup = (asked: Asked) =>
+  AsyncResult.match(useAtomValue(client.resolve(asked.app)), {
+    onInitial: () => <Plan found={undefined} {...asked} />,
+    onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
+    onSuccess: ({ value }) => <Plan found={value} {...asked} />,
+  })
+
+const Sk = ({ w }: { w: string }) => <span className="sk" style={{ width: w }} />
+
+const Plan = ({ found, app, initialChange, agent, error }: Asked & { found: Found | undefined }) => {
   const [change, setChange] = useState(initialChange)
+  const [cold] = useState(!found)
+  const arrive = cold ? "arrive" : undefined
   const navigate = useNavigate()
   const me = useAtomValue(client.me)
   const user = AsyncResult.isSuccess(me) ? me.value : undefined
-  const back = `/?${new URLSearchParams({ q: `${repo.owner}/${repo.name}: ${change}`, ...(agent ? { agent } : {}) })}`
+  const repo = found?.repo
+  const named = repo ? `${repo.owner}/${repo.name}` : app
+  const back = `/?${new URLSearchParams({ q: change.trim() ? `${named}: ${change}` : named, ...(agent ? { agent } : {}) })}`
   return (
     <section className="plan">
-      <a className="card target" href={`https://github.com/${repo.owner}/${repo.name}`} target="_blank" rel="noreferrer">
-        <img src={repo.avatar} alt="" width={44} height={44} />
+      <a className="card target" href={repo ? `https://github.com/${repo.owner}/${repo.name}` : undefined} target="_blank" rel="noreferrer">
+        {repo ? <img className={arrive} src={repo.avatar} alt="" width={44} height={44} /> : <span className="sk face" />}
         <span className="who">
           <span className="repo">
-            {repo.owner} / <b>{repo.name}</b>
+            {repo ? (
+              <span className={arrive}>
+                {repo.owner} / <b>{repo.name}</b>
+              </span>
+            ) : (
+              <Sk w="12ch" />
+            )}
           </span>
-          {repo.description ? <span className="about">{repo.description}</span> : null}
+          {!repo ? (
+            <span className="about">
+              <Sk w="22ch" />
+            </span>
+          ) : repo.description ? (
+            <span className={cold ? "about arrive" : "about"}>{repo.description}</span>
+          ) : null}
         </span>
-        <span className="stars">★ {stars(repo.stars)}</span>
+        <span className="stars">{repo ? <span className={arrive}>★ {stars(repo.stars)}</span> : <Sk w="3.5ch" />}</span>
       </a>
-      {others.length ? (
-        <p className="others">
+      {found?.others.length ? (
+        <p className={cold ? "others arrive" : "others"}>
           Not it?{" "}
-          {others.map((other) => (
+          {found.others.map((other) => (
             <button
               type="button"
               key={`${other.owner}/${other.name}`}
@@ -173,7 +181,17 @@ const Plan = ({
       <ol className="steps">
         <li className={user ? "done" : "now"}>
           <span className="n">1</span>
-          {AsyncResult.isInitial(me) ? null : user ? (
+          {AsyncResult.isInitial(me) ? (
+            <div>
+              <p>
+                <Sk w="26ch" />
+              </p>
+              <span className="sk button" />
+              <p className="fine">
+                <Sk w="38ch" />
+              </p>
+            </div>
+          ) : user ? (
             <p>
               Signed in to GitHub as <b>{user.login}</b>
             </p>
@@ -188,13 +206,26 @@ const Plan = ({
             </div>
           )}
         </li>
-        {user && change.trim() ? (
+        {user && change.trim() && repo ? (
           <Prepare repo={repo} change={change} agent={agent} />
+        ) : user && change.trim() ? (
+          <>
+            <li className="now">
+              <span className="n">2</span>
+              <div>
+                <p>Making your fork…</p>
+              </div>
+            </li>
+            <li className="later">
+              <span className="n">3</span>
+              <p>The agent builds it on your ChatGPT or Claude plan</p>
+            </li>
+          </>
         ) : (
           <>
             <li className="later">
               <span className="n">2</span>
-              <p>Your fork of {repo.name}</p>
+              <p>Your fork of {repo ? repo.name : <Sk w="7ch" />}</p>
             </li>
             <li className="later">
               <span className="n">3</span>

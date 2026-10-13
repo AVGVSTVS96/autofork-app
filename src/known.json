@@ -1,0 +1,82 @@
+{
+  "t3code": {
+    "repo": {
+      "owner": "pingdotgg",
+      "name": "t3code",
+      "description": null,
+      "stars": 27312,
+      "avatar": "/repos/t3code.png"
+    },
+    "others": []
+  },
+  "herdr": {
+    "repo": {
+      "owner": "herdrdev",
+      "name": "herdr",
+      "description": "the runtime your coding agents live on",
+      "stars": 43746,
+      "avatar": "/repos/herdr.png"
+    },
+    "others": []
+  },
+  "ghostty": {
+    "repo": {
+      "owner": "ghostty-org",
+      "name": "ghostty",
+      "description": "👻 Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.",
+      "stars": 62156,
+      "avatar": "/repos/ghostty.png"
+    },
+    "others": []
+  },
+  "buzz": {
+    "repo": {
+      "owner": "block",
+      "name": "buzz",
+      "description": "A hive mind communication platform",
+      "stars": 35909,
+      "avatar": "/repos/buzz.png"
+    },
+    "others": []
+  },
+  "pi": {
+    "repo": {
+      "owner": "earendil-works",
+      "name": "pi",
+      "description": "AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI",
+      "stars": 114812,
+      "avatar": "/repos/pi.png"
+    },
+    "others": []
+  },
+  "cmux": {
+    "repo": {
+      "owner": "manaflow-ai",
+      "name": "cmux",
+      "description": "Open source Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents. Built for multitasking, organization, and programmability.",
+      "stars": 28145,
+      "avatar": "/repos/cmux.png"
+    },
+    "others": []
+  },
+  "tmux": {
+    "repo": {
+      "owner": "tmux",
+      "name": "tmux",
+      "description": "tmux source code",
+      "stars": 49919,
+      "avatar": "/repos/tmux.png"
+    },
+    "others": []
+  },
+  "utm": {
+    "repo": {
+      "owner": "utmapp",
+      "name": "UTM",
+      "description": "Virtual machines for iOS and macOS",
+      "stars": 35867,
+      "avatar": "/repos/utm.png"
+    },
+    "others": []
+  }
+}

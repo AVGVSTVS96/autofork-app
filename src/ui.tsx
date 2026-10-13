@@ -1,9 +1,11 @@
-import { useAtomValue } from "@effect/atom-react"
+import { RegistryContext, useAtomValue } from "@effect/atom-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { split } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
+import { known } from "./known.ts"
 import logo from "./svg/autofork.svg?raw"
 import claude from "./svg/claude.svg?raw"
 import openai from "./svg/openai.svg?raw"
@@ -123,6 +125,126 @@ export const Composer = ({
     </form>
   )
 }
+
+const CUT = /^(.+?)(?:\s*,\s*(?:but\s+)?|\s+but\s+|\s*:\s+)(.*)$/i
+const BUT = /^\s*(?:but\s+)?/i
+
+export const Ask = ({
+  id,
+  initial = "",
+  onSubmit,
+  label,
+  action,
+  examples,
+}: {
+  id?: string
+  initial?: string
+  onSubmit: (ask: string, via?: string) => void
+  label: string
+  action: string
+  examples: ReadonlyArray<Example>
+}) => {
+  const start = split(initial)
+  const [app, setApp] = useState(start.app)
+  const [text, setText] = useState(start.change)
+  const [current, setCurrent] = useState(0)
+  const [idle, setIdle] = useState(true)
+  const resume = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const input = useRef<HTMLTextAreaElement>(null)
+  const live = idle && !app && !text
+  const fallback = sentence(examples[current]!)
+
+  const type = (next: string) => {
+    const cut = app ? null : next.match(CUT)
+    if (cut && cut[1]!.trim()) {
+      setApp(cut[1]!.trim())
+      setText(cut[2]!.replace(BUT, ""))
+    } else setText(app ? next.replace(BUT, "") : next)
+  }
+  const unchip = () => {
+    const back = text.trim() ? `${app}, but ${text}` : app
+    setApp("")
+    setText(back)
+    requestAnimationFrame(() => input.current?.setSelectionRange(app.length, app.length))
+  }
+  const registry = useContext(RegistryContext)
+  const asked = () => {
+    const change = text.trim()
+    return app ? (change ? `${app}, but ${change}` : app) : change || fallback
+  }
+  const prefetch = () => {
+    const name = split(asked()).app
+    if (!known(name)) registry.mount(client.resolve(name))()
+  }
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const ask = asked()
+    const via = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value || undefined
+    onSubmit(ask, via)
+  }
+  return (
+    <form className="ask" id={id} onSubmit={submit}>
+      <label className="field slots">
+        {app ? <Chip app={app} onEdit={unchip} /> : null}
+        <span className="words">
+          {app ? <span className="but">but</span> : null}
+          <span className="entry" data-value={text}>
+            <textarea
+              ref={input}
+              rows={1}
+              value={text}
+              onChange={(event) => type(event.target.value.replace(/\n/g, " "))}
+              onKeyDown={(event) => {
+                const field = event.currentTarget
+                if (event.key === "Backspace" && app && field.selectionStart === 0 && field.selectionEnd === 0) {
+                  event.preventDefault()
+                  return unchip()
+                }
+                if (event.key !== "Enter" || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                if (!app && text.trim()) return type(`${text.trim()}, `)
+                field.form?.requestSubmit()
+              }}
+              onFocus={() => {
+                clearTimeout(resume.current)
+                setIdle(false)
+              }}
+              onBlur={() => {
+                resume.current = setTimeout(() => setIdle(true), 1400)
+              }}
+              placeholder={live ? "" : app ? "what you'd change" : fallback}
+              aria-label={app ? `What you'd change in ${app}` : label}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </span>
+        </span>
+        <Typer examples={examples} live={live} onLand={setCurrent} />
+      </label>
+      <button type="submit" onPointerEnter={prefetch} onPointerDown={prefetch} onFocus={prefetch}>
+        {action}
+      </button>
+    </form>
+  )
+}
+
+const Chip = ({ app, onEdit }: { app: string; onEdit: () => void }) => {
+  const ready = known(app)
+  return ready ? <Badge name={app} avatar={ready.repo.avatar} onEdit={onEdit} /> : <Lookup app={app} onEdit={onEdit} />
+}
+
+const Lookup = ({ app, onEdit }: { app: string; onEdit: () => void }) => {
+  const found = useAtomValue(client.resolve(app))
+  const repo = AsyncResult.isSuccess(found) ? found.value.repo : undefined
+  return <Badge name={repo?.name ?? app} avatar={repo?.avatar} onEdit={onEdit} />
+}
+
+const Badge = ({ name, avatar, onEdit }: { name: string; avatar: string | undefined; onEdit: () => void }) => (
+  <button type="button" className="badge chip" onClick={onEdit} title="Change the app">
+    {avatar ? <img src={avatar} alt="" /> : <i />}
+    {name}
+  </button>
+)
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

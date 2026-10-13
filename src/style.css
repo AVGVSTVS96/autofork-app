@@ -112,6 +112,19 @@ nav .links { align-items: center; }
 .reel { display: grid; justify-items: start; }
 .reel span { display: flex; align-items: center; gap: 8px; height: 32px; font-weight: 640; font-size: 17px; white-space: nowrap; }
 .reel img { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+/* the real composer: type an app, and it becomes a badge like the examples' */
+.slots { display: flex; align-items: center; gap: 9px; }
+.slots::after { content: none; }
+.slots .words { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 5px; }
+.slots .entry { flex: 1; min-width: 0; display: grid; }
+.slots .entry textarea, .slots .entry::after { grid-area: 1 / 1; padding: 0 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.slots .entry::after { content: attr(data-value) " "; visibility: hidden; }
+.but { flex: none; padding-left: 4px; color: var(--ink-3); }
+.but + .entry textarea, .but + .entry::after { padding-left: 0; }
+.ask .chip { align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 5px; background: var(--panel-2); color: var(--ink); font: 640 17px/1 var(--sans); letter-spacing: normal; white-space: nowrap; box-shadow: none; transition: border-color .15s ease; }
+.ask .chip:hover:not(:disabled) { box-shadow: none; border-color: var(--ink-3); }
+.chip img, .chip i { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+.chip i { background: var(--tint); animation: breathe 1.6s ease-in-out infinite; }
 .ask button, .paste button { flex: none; height: calc(68px - 2 * var(--in) - 2px); padding: 0 22px; border: 0; border-radius: calc(var(--r) - var(--in) - 1px); background: var(--you); color: var(--on-you); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; cursor: pointer; transition: var(--press); }
 .ask button:focus-visible, .paste button:focus-visible { outline-offset: -4px; outline-color: var(--on-you); }
 .ask button:disabled, .paste button:disabled { opacity: 1; background: var(--panel-2); color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--hair); }
@@ -189,7 +202,7 @@ button:disabled { opacity: .4; cursor: default; }
 .page.bare > nav { margin-left: 0; }
 .fork, .start { max-width: 720px; margin: 0 auto; padding-bottom: 120px; }
 .fork { display: grid; gap: 20px; }
-.start h1 { margin: clamp(24px, 5vh, 48px) 0 24px; font-size: clamp(30px, 4.4vw, 40px); line-height: 1; letter-spacing: -0.025em; font-weight: 800; }
+.start h1 { margin: clamp(20px, 4vh, 40px) 0 18px; font-size: 26px; line-height: 1.05; letter-spacing: -0.022em; font-weight: 800; }
 .start h1 > span { display: block; }
 .fork-head { margin: clamp(24px, 6vh, 64px) 0 12px; }
 .fork-head h1 { font-size: clamp(40px, 6.4vw, 64px); line-height: 1; letter-spacing: -0.028em; font-weight: 800; overflow-wrap: anywhere; }
@@ -495,6 +508,11 @@ footer .links { display: flex; gap: 22px; }
   .field textarea, .field::after { padding: 0 8px; }
   .hero .field { min-height: 74px; align-content: start; }
   .hero .field textarea { padding-top: 7px; }
+  .slots { flex-wrap: wrap; align-content: flex-start; row-gap: 12px; }
+  .slots .words { flex-basis: 100%; padding: 0 8px; }
+  .slots .entry textarea, .slots .entry::after, .but { padding-left: 0; padding-right: 0; }
+  .hero .slots .chip ~ .words textarea { padding-top: 0; }
+  .ask .chip { flex: none; height: 34px; font-size: 16px; }
   .typer { flex-direction: column; align-items: flex-start; gap: 12px; }
   .typed-line { max-width: 100%; padding: 0 8px; }
   .badge { border-radius: calc(var(--r) - var(--in) - 1px); }
@@ -517,7 +535,7 @@ footer .links { display: flex; gap: 22px; }
   .page { --rail: 0px; --gutter: 20px; }
   .hero h1 { margin-top: 148px; }
   .hero h1 { font-size: min(12.4vw, 60px); }
-  .start h1 { font-size: 30px; }
+  .start h1 { font-size: 22px; }
   .page > section { padding-top: 132px; }
   h2 { font-size: 34px; }
   .line { margin-top: 14px; font-size: 17px; line-height: 1.5; }
@@ -551,6 +569,14 @@ footer .links { display: flex; gap: 22px; }
   .tip { left: auto; right: -40px; max-width: 260px; translate: 0; }
   .t3-panels { display: none; }
 }
+/* while GitHub answers: blocks the size of the text they stand in for, which fades in over them */
+.sk { display: inline-block; height: 1em; vertical-align: -0.14em; border-radius: 6px; background: var(--tint); animation: breathe 1.6s ease-in-out infinite; }
+.sk.face { width: 44px; height: 44px; border-radius: 10px; }
+.sk.button { display: block; width: 214px; height: 46px; border-radius: 12px; }
+@keyframes breathe { 50% { opacity: .5; } }
+.arrive { animation: arrive 380ms var(--out) both; }
+@keyframes arrive { from { opacity: 0; filter: blur(4px); } }
+
 /* Fork it: the headline and composer carry over to the flow page and back while the rest crossfades */
 .make { width: fit-content; view-transition-name: make; }
 .keep, .updates { display: inline-block; }
@@ -565,6 +591,11 @@ nav .links > :last-child { view-transition-name: me; }
   ::view-transition-group(updates) { animation-delay: 160ms; }
   :active-view-transition-type(back)::view-transition-group(updates) { animation-delay: 0ms; animation-duration: 360ms; }
 }
+.start .plan { view-transition-name: plan; }
+::view-transition-group(ask), ::view-transition-group(ask-go) { z-index: 1; }
+::view-transition-new(plan):only-child { animation: plan-in 520ms var(--out) 140ms both; }
+::view-transition-old(plan):only-child { animation: 160ms ease-out both fade-out; }
+@keyframes plan-in { from { opacity: 0; transform: translateY(28px); } }
 ::view-transition-old(root) { animation: 200ms ease-out both fade-out; }
 ::view-transition-new(root) { animation: 360ms ease-out 100ms both fade-in; }
 @keyframes fade-out { to { opacity: 0; } }
@@ -574,7 +605,7 @@ nav .links > :last-child { view-transition-name: me; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   html { scroll-behavior: auto; }
   .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
-  .wait::before, .item.now > i, .caret { animation: none; }
+  .wait::before, .item.now > i, .caret, .sk, .chip i, .arrive { animation: none; }
   .ask, .btn, .pill, .target, .code, .paste, .segments button, .change textarea { transition: none !important; }
 }
 .asks img[src$=".svg"] { padding: 6px; background: var(--panel-2); }
