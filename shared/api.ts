@@ -55,6 +55,7 @@ export const Run = Schema.Struct({
   updatedAt: Schema.String,
   steps: Schema.Array(Step),
   log: Schema.Array(Schema.String),
+  moved: Schema.Boolean,
 })
 export type Run = typeof Run.Type
 

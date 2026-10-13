@@ -291,8 +291,12 @@ export const addChange = (user: User, owner: string, name: string, change: strin
 type Job = { id: number; status: string; conclusion: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
 type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string }
 
-const story = (raw: string, name: (id: string) => string) => {
+const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
+
+const story = (raw: string, name: (id: string) => string): Pick<Run, "log" | "moved"> => {
   const lines = raw.split("\n").map((line) => line.replace(/^\S+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trim())
+  const moved = lines.find((line) => MOVED.test(line))
+  if (moved) return { log: [moved], moved: true }
   const told = lines.flatMap((line): string[] => {
     let match: RegExpMatchArray | null
     if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
@@ -304,7 +308,7 @@ const story = (raw: string, name: (id: string) => string) => {
     if (/^(verify failed|the agent|these files)/.test(line)) return [line]
     return []
   })
-  return [...new Set(told)]
+  return { log: [...new Set(told)], moved: false }
 }
 
 const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (id: string) => string) =>
@@ -318,10 +322,11 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
     if (!run) return null
     const { jobs } = yield* GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/jobs`)
     const job = jobs[0]
-    const log = job && job.status === "completed" ? yield* GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(
+    const untold = { log: [], moved: false }
+    const told = job && job.status === "completed" ? yield* GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(
       Effect.map((raw) => story(raw, describe)),
-      Effect.orElseSucceed((): string[] => []),
-    ) : []
+      Effect.orElseSucceed(() => untold),
+    ) : untold
     return {
       url: run.html_url,
       status: run.status,
@@ -329,7 +334,7 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
       startedAt: run.run_started_at,
       updatedAt: run.updated_at,
       steps: (job?.steps ?? []).map(({ name, status, conclusion }) => ({ name, status, conclusion })),
-      log,
+      ...told,
     } satisfies Run
   }).pipe(Effect.catchIf(GitHub.missing, () => Effect.succeed(null)))
 

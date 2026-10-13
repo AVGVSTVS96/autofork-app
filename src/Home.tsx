@@ -4,7 +4,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import type { ForkState, Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { Bar, GitHubIcon, stars } from "./ui.tsx"
+import { Bar, ClaudeIcon, Composer, GitHubIcon, OpenAIIcon, stars } from "./ui.tsx"
 
 const EXAMPLE = "T3 Code, but always show context usage"
 
@@ -19,22 +19,14 @@ export const Home = ({ q }: { q: string }) => {
   return (
     <>
       <Bar />
-      <main className="wrap home">
-        <h1 className={q ? "hero small" : "hero"}>
-          <span className="line ctx">Fork anything.</span>
-          <span className="line add">Keep your changes.</span>
+      <main className={q ? "wrap home asked" : "wrap home"}>
+        <h1>
+          <span>Make it yours.</span>
+          <span className="you">Keep their updates.</span>
         </h1>
-        <form className="ask" onSubmit={submit}>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={EXAMPLE}
-            aria-label="An open source app and what you'd change"
-            autoFocus={!q}
-          />
-          <button type="submit">Fork it</button>
-        </form>
-        {q ? <Flow key={q} q={q} /> : <p className="lede">Name an open source app and what you'd change. Your fork keeps up with every release.</p>}
+        {q ? null : <p className="sub">Name an open source app and what you'd change. Every new release arrives with your changes already in it.</p>}
+        <Composer value={draft} onChange={setDraft} onSubmit={submit} placeholder={EXAMPLE} label="An open source app and what you'd change" action="Fork it" autoFocus={!q} />
+        {q ? <Flow key={q} q={q} /> : <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>}
       </main>
     </>
   )
@@ -43,7 +35,7 @@ export const Home = ({ q }: { q: string }) => {
 const Flow = ({ q }: { q: string }) => {
   const resolved = useAtomValue(useMemo(() => client.resolve(q), [q]))
   return AsyncResult.match(resolved, {
-    onInitial: () => <p className="note">Finding it on GitHub…</p>,
+    onInitial: () => <p className="note wait">Finding it on GitHub…</p>,
     onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
     onSuccess: ({ value }) => <Plan repo={value.repo} others={value.others} initialChange={value.change} />,
   })
@@ -57,16 +49,16 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
   const back = `/?q=${encodeURIComponent(`${repo.owner}/${repo.name}: ${change}`)}`
   return (
     <section className="plan">
-      <div className="card target">
-        <img src={repo.avatar} alt="" width={40} height={40} />
-        <div>
-          <a className="repo" href={`https://github.com/${repo.owner}/${repo.name}`} target="_blank" rel="noreferrer">
-            {repo.owner}/<b>{repo.name}</b>
-          </a>
-          <span className="meta">★ {stars(repo.stars)}</span>
-          {repo.description ? <p className="meta">{repo.description}</p> : null}
-        </div>
-      </div>
+      <a className="card target" href={`https://github.com/${repo.owner}/${repo.name}`} target="_blank" rel="noreferrer">
+        <img src={repo.avatar} alt="" width={44} height={44} />
+        <span className="who">
+          <span className="repo">
+            {repo.owner} / <b>{repo.name}</b>
+          </span>
+          {repo.description ? <span className="about">{repo.description}</span> : null}
+        </span>
+        <span className="stars">★ {stars(repo.stars)}</span>
+      </a>
       {others.length ? (
         <p className="others">
           Not it?{" "}
@@ -74,7 +66,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
             <button
               type="button"
               key={`${other.owner}/${other.name}`}
-              className="link"
+              className="pill"
               onClick={() => void navigate({ to: "/", search: { q: `${other.owner}/${other.name}: ${change}` } })}
             >
               {other.owner}/{other.name}
@@ -84,7 +76,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
       ) : null}
       <label className="change">
         <span>What you'd change</span>
-        <textarea value={change} onChange={(event) => setChange(event.target.value)} rows={2} placeholder="always show context usage" />
+        <textarea value={change} onChange={(event) => setChange(event.target.value)} rows={1} placeholder="always show context usage" />
       </label>
 
       <ol className="steps">
@@ -97,7 +89,7 @@ const Plan = ({ repo, others, initialChange }: { repo: Repo; others: ReadonlyArr
           ) : (
             <div>
               <p>Your fork lives in your GitHub account.</p>
-              <a className="button" href={`/api/github/start?back=${encodeURIComponent(back)}`}>
+              <a className="btn primary" href={`/api/github/start?back=${encodeURIComponent(back)}`}>
                 <GitHubIcon /> Continue with GitHub
               </a>
               <p className="fine">Keep "All repositories" so autofork can make the fork. It only changes the forks it makes.</p>
@@ -159,7 +151,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
         <span className="n">2</span>
         <div>
         {state && state.places.length > 1 ? (
-          <div className="choices small" role="group" aria-label="Fork into">
+          <div className="segments" role="group" aria-label="Fork into">
             {state.places.map((place) => (
               <button
                 type="button"
@@ -186,7 +178,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
         ) : state.status === "fork" ? (
           <div>
             <p>autofork can only see the repos you picked. Fork it on GitHub, then come back here.</p>
-            <a className="button" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
               <GitHubIcon /> Fork {repo.name} on GitHub
             </a>
           </div>
@@ -195,7 +187,7 @@ const Prepare = ({ repo, change }: { repo: Repo; change: string }) => {
             <p>
               Add <b>{state.owner}/{state.name}</b> to autofork's repos on GitHub, then come back here.
             </p>
-            <a className="button" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
               <GitHubIcon /> Open autofork's access
             </a>
           </div>
@@ -222,11 +214,11 @@ const Connect = ({ owner, name, change }: { owner: string; name: string; change:
       <div>
         <p>Pick the plan the agent runs on. It works in your fork's GitHub Actions.</p>
         <div className="choices">
-          <button type="button" className={pick === "chatgpt" ? "on" : ""} onClick={() => setPick("chatgpt")}>
-            ChatGPT
+          <button type="button" className={pick === "chatgpt" ? "btn on" : "btn"} aria-pressed={pick === "chatgpt"} onClick={() => setPick("chatgpt")}>
+            <OpenAIIcon /> ChatGPT
           </button>
-          <button type="button" className={pick === "claude" ? "on" : ""} onClick={() => setPick("claude")}>
-            Claude
+          <button type="button" className={pick === "claude" ? "btn on" : "btn"} aria-pressed={pick === "claude"} onClick={() => setPick("claude")}>
+            <ClaudeIcon /> Claude
           </button>
         </div>
         {pick === "chatgpt" ? <ChatGPT owner={owner} name={name} change={change} /> : null}
@@ -279,7 +271,7 @@ const ChatGPT = ({ owner, name, change }: { owner: string; name: string; change:
   }, [])
 
   if (error) return <p className="bad">{error}</p>
-  if (!device) return <p className="note">Getting a code from ChatGPT…</p>
+  if (!device) return <p className="wait">Getting a code from ChatGPT…</p>
   return (
     <div className="device">
       <p>Open ChatGPT's sign-in page and enter this code:</p>
@@ -290,12 +282,12 @@ const ChatGPT = ({ owner, name, change }: { owner: string; name: string; change:
         title="Copy"
       >
         {device.code}
-        <span>{copied ? "copied" : "copy"}</span>
+        <span>{copied ? "Copied" : "Copy"}</span>
       </button>
-      <a className="button" href={device.url} target="_blank" rel="noreferrer">
-        Open ChatGPT sign-in
+      <a className="btn primary" href={device.url} target="_blank" rel="noreferrer">
+        <OpenAIIcon /> Open ChatGPT sign-in
       </a>
-      <p className="fine">This page moves on by itself once you've signed in.</p>
+      <p className="fine wait">This page moves on by itself once you've signed in.</p>
     </div>
   )
 }
@@ -333,15 +325,15 @@ const Claude = ({ owner, name, change }: { owner: string; name: string; change: 
     }
   }
 
-  if (!url) return error ? <p className="bad">{error}</p> : <p className="note">Getting Claude's sign-in ready…</p>
+  if (!url) return error ? <p className="bad">{error}</p> : <p className="wait">Getting Claude's sign-in ready…</p>
   return (
     <form className="device" onSubmit={connect}>
       <p>Authorize on Claude's page, then copy the code it shows and paste it here.</p>
-      <a className="button" href={url} target="_blank" rel="noreferrer">
-        Open Claude sign-in
+      <a className="btn primary" href={url} target="_blank" rel="noreferrer">
+        <ClaudeIcon /> Open Claude sign-in
       </a>
       <div className="paste">
-        <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Paste the code" aria-label="Code from Claude" />
+        <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Paste the code" aria-label="Code from Claude" autoComplete="off" spellCheck={false} />
         <button type="submit" disabled={!code.trim() || busy}>
           {busy ? "Starting…" : "Start"}
         </button>

@@ -4,7 +4,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { Bar, GitHubIcon, Row } from "./ui.tsx"
+import { Bar, ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, OpenAIIcon } from "./ui.tsx"
 
 export const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
@@ -24,7 +24,10 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
     <>
       <Bar>
         <a className="ghost" href={`https://github.com/${owner}/${name}`} target="_blank" rel="noreferrer">
-          <GitHubIcon /> {owner}/{name}
+          <GitHubIcon />
+          <span>
+            {owner}/{name}
+          </span>
         </a>
       </Bar>
       <main className="wrap page">
@@ -33,7 +36,7 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
         ) : AsyncResult.isFailure(result) ? (
           <p className="note bad">{client.failure(result.cause)}</p>
         ) : (
-          <p className="note">Loading {owner}/{name}…</p>
+          <p className="note wait">Loading {owner}/{name}…</p>
         )}
       </main>
     </>
@@ -46,32 +49,35 @@ const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: bo
     <>
       <header className="fork-head">
         <h1>
-          Your <b>{app}</b>
+          Your <span className="you">{app}</span>
         </h1>
-        <p className="meta">
-          {fork.owner}/{fork.name}
+        <p className="facts">
+          <span>
+            <ForkIcon /> {fork.owner}/{fork.name}
+          </span>
           {fork.upstream ? (
-            <>
-              {" "}
-              · keeps up with{" "}
+            <span>
+              Keeps up with{" "}
               <a href={`https://github.com/${fork.upstream}`} target="_blank" rel="noreferrer">
                 {fork.upstream}
               </a>
-            </>
+            </span>
           ) : null}
-          {fork.agent ? ` · runs on your ${fork.agent === "claude" ? "Claude" : "ChatGPT"} plan` : null}
+          {fork.agent ? (
+            <span>
+              {fork.agent === "claude" ? <ClaudeIcon /> : <OpenAIIcon />} Runs on your {fork.agent === "claude" ? "Claude" : "ChatGPT"} plan
+            </span>
+          ) : null}
         </p>
       </header>
 
-      <section className="changes">
+      <ul className="card list changes">
         {fork.changes.length ? (
           fork.changes.map((change) =>
             change.state === "paused" ? (
-              <div key={change.id} className="paused">
-                <Row kind="ctx" end={<span>paused</span>}>
-                  {change.text}
-                </Row>
-                <p>
+              <Item key={change.id} state="paused" end="paused">
+                {change.text}
+                <p className="why">
                   {fork.upstream ? fork.upstream.split("/")[1] : "The app"} does this now{change.upstream ? `: ${change.upstream}` : "."} autofork stopped
                   applying it. Keep theirs, or ask for a different change.
                   {change.issue ? (
@@ -83,17 +89,17 @@ const Body = ({ fork, run, waiting }: { fork: Fork; run: Run | null; waiting: bo
                     </>
                   ) : null}
                 </p>
-              </div>
+              </Item>
             ) : (
-              <Row key={change.id} kind={change.state === "built" ? "add" : "agent"} end={change.state === "built" ? <span className="ok">built</span> : <span>building</span>}>
+              <Item key={change.id} state={change.state === "built" ? "ok" : "now"} end={change.state}>
                 {change.text}
-              </Row>
+              </Item>
             ),
           )
         ) : (
-          <Row kind="ctx">No changes yet.</Row>
+          <Item state="wait">No changes yet.</Item>
         )}
-      </section>
+      </ul>
 
       <Progress run={run} waiting={waiting} fork={fork} />
       {fork.yours ? <More owner={fork.owner} name={fork.name} /> : null}
@@ -130,8 +136,10 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
   const now = useNow(live)
   if (waiting) {
     return (
-      <section className="progress card">
-        <Row kind="agent">Starting the build in your GitHub Actions…</Row>
+      <section className="card run">
+        <ul className="list">
+          <Item state="now">Starting the build in your GitHub Actions…</Item>
+        </ul>
       </section>
     )
   }
@@ -144,21 +152,28 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
   const done = run.status === "completed"
   const good = run.conclusion === "success"
   return (
-    <section className="progress card">
-      <div className="progress-head">
-        <span>{done ? (good ? "Last run" : "Last run didn't finish") : "Working"}</span>
-        <span className="mono">{elapsed(run.startedAt, done ? Date.parse(run.updatedAt) : now)}</span>
+    <section className="card run">
+      <div className="run-head">
+        <b>{done ? (good ? "Last run" : "Last run didn't finish") : "Working"}</b>
+        <span>{elapsed(run.startedAt, done ? Date.parse(run.updatedAt) : now)}</span>
       </div>
-      {unique.map((step) => (
-        <Row
-          key={step.text}
-          kind={step.status === "completed" ? (step.conclusion === "success" || step.conclusion === "skipped" ? "add" : "del") : step.text.startsWith("The agent") ? "agent" : "ctx"}
-          end={step.status === "in_progress" ? <span className="pulse">now</span> : null}
-        >
-          {step.text}
-        </Row>
-      ))}
-      {done && run.log.length ? (
+      <ul className="list">
+        {unique.map((step) => (
+          <Item
+            key={step.text}
+            state={step.status === "completed" ? (step.conclusion === "success" || step.conclusion === "skipped" ? "ok" : "bad") : step.status === "in_progress" ? "now" : "wait"}
+            end={step.status === "in_progress" ? "now" : null}
+          >
+            {step.text}
+          </Item>
+        ))}
+      </ul>
+      {done && run.moved ? (
+        <p className="moved">
+          <SyncIcon />
+          {run.log[0]}
+        </p>
+      ) : done && run.log.length ? (
         <ul className="story">
           {run.log.map((line) => (
             <li key={line}>{line}</li>
@@ -169,7 +184,7 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
         <a href={run.url} target="_blank" rel="noreferrer">
           See the run on GitHub
         </a>
-        {done && good && fork.upstream ? (
+        {done && good && !run.moved && fork.upstream ? (
           <a href={`https://github.com/${fork.owner}/${fork.name}/commits`} target="_blank" rel="noreferrer">
             See the change
           </a>
@@ -178,6 +193,12 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
     </section>
   )
 }
+
+const SyncIcon = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="icon">
+    <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M13.25 6.5A5.5 5.5 0 0 0 3.2 5M2.75 9.5a5.5 5.5 0 0 0 10.05 1.5M3 2v3h3M13 14v-3h-3" />
+  </svg>
+)
 
 const More = ({ owner, name }: { owner: string; name: string }) => {
   const add = useAtomSet(client.addChange, { mode: "promiseExit" })
@@ -197,12 +218,17 @@ const More = ({ owner, name }: { owner: string; name: string }) => {
     }
   }
   return (
-    <form className="ask more" onSubmit={submit}>
-      <input value={change} onChange={(event) => setChange(event.target.value)} placeholder="Ask for another change" aria-label="Another change" />
-      <button type="submit" disabled={!change.trim() || state.busy}>
-        {state.busy ? "Adding…" : "Add it"}
-      </button>
+    <div className="more">
+      <Composer
+        value={change}
+        onChange={setChange}
+        onSubmit={submit}
+        placeholder="Ask for another change"
+        label="Another change"
+        action={state.busy ? "Adding…" : "Add it"}
+        disabled={!change.trim() || state.busy}
+      />
       {state.error ? <p className="bad">{state.error}</p> : null}
-    </form>
+    </div>
   )
 }
