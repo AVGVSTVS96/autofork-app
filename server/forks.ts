@@ -3,6 +3,7 @@ import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, type ForkState, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
+import { diff, NOTE, noteDoc, withNote } from "./note.ts"
 import type { User } from "./session.ts"
 
 type GitHubRepo = {
@@ -161,6 +162,23 @@ const describe = (token: GitHub.Token, repo: GitHubRepo) =>
     if (description !== repo.description) yield* GitHub.request(token, "PATCH", `/repos/${repo.full_name}`, { description })
   }).pipe(Effect.ignore)
 
+const readme = (token: GitHub.Token, repo: string, ref?: string) =>
+  GitHub.request<{ path: string; sha: string; content: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`).pipe(Effect.option)
+
+const readmeNote = (token: GitHub.Token, owner: string, name: string, branch: string, upstream: string) =>
+  Effect.gen(function* () {
+    const [mine, theirs] = yield* Effect.all([readme(token, `${owner}/${name}`, branch), readme(token, upstream)], { concurrency: 2 })
+    if (mine._tag === "None" || theirs._tag === "None" || mine.value.sha !== theirs.value.sha || !/^readme\.md$/i.test(mine.value.path)) return []
+    const text = Buffer.from(mine.value.content, "base64").toString()
+    const noted = !text.includes("\uFFFD") && withNote(text, upstream)
+    if (!noted) return []
+    return [
+      { path: mine.value.path, content: noted },
+      { path: `.autofork/${NOTE}/PATCH.md`, content: noteDoc(upstream.split("/")[1]!) },
+      { path: `.autofork/${NOTE}/${NOTE}.patch`, content: diff(mine.value.path, text, noted) },
+    ]
+  })
+
 const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
   GitHub.request<{ name: string; type: string; size: number; sha: string }[]>(token, "GET", `/repos/${owner}/${name}/contents/${path}`).pipe(
     Effect.catchIf(GitHub.missing, () => Effect.succeed([])),
@@ -304,6 +322,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
         files.push(
           { path: ".autofork/config.json", content: `${JSON.stringify(config, null, 2)}\n` },
           { path: ".autofork/.gitignore", content: "!*.patch\n" },
+          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
         yield* disableInherited(user.token, owner, name)
       }
@@ -452,7 +471,8 @@ export const status = (owner: string, name: string) =>
           Effect.orElseSucceed(() => new Map<string, string>()),
         )
       : new Map<string, string>()
-    const changes = found.map(
+    const note = found.some((change) => change.id === NOTE)
+    const changes = found.filter((change) => change.id !== NOTE).map(
       ({ id, text, paused, built }): Change => ({
         id,
         text,
@@ -472,6 +492,7 @@ export const status = (owner: string, name: string) =>
       upstream: repo.parent?.full_name ?? null,
       agent,
       changes,
+      note,
       run: yield* latestRun(token, owner, name, (id) => changes.find((change) => change.id === id)?.text ?? id),
     }
   })

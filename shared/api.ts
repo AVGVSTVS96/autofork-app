@@ -84,6 +84,7 @@ export const Fork = Schema.Struct({
   upstream: Schema.NullOr(Schema.String),
   agent: Schema.NullOr(Agent),
   changes: Schema.Array(Change),
+  note: Schema.Boolean,
   run: Schema.NullOr(Run),
 })
 export type Fork = typeof Fork.Type

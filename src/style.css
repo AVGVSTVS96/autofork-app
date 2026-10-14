@@ -233,6 +233,9 @@ button:disabled { opacity: .4; cursor: default; }
 .changes { padding: 4px 22px; }
 .changes .item { padding: 15px 0; font-size: 17px; font-weight: 560; letter-spacing: -0.005em; }
 .changes .item + .item { border-top: 1px solid var(--hair); }
+.aside { margin: -8px 22px 0; text-wrap: pretty; }
+.aside a { font-family: var(--mono); font-size: 13px; text-decoration: underline; text-decoration-color: var(--hair); text-underline-offset: 3px; transition: text-decoration-color .15s ease; }
+.aside a:hover { text-decoration-color: currentColor; }
 .why { margin-top: 6px; font-size: 15px; font-weight: 400; line-height: 1.5; color: var(--ink-2); }
 .why a { color: var(--you); font-weight: 600; }
 
@@ -542,6 +545,7 @@ footer .links { display: flex; gap: 22px; }
   .code { justify-content: space-between; font-size: 26px; }
   .paste { max-width: none; }
   .changes, .run { padding-inline: 18px; }
+  .aside { margin-inline: 18px; }
   nav .links > a:not(:last-child, .ghost) { display: none; }
   .me span { display: none; }
   .page { --rail: 0px; --gutter: 20px; }
