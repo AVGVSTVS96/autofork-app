@@ -260,7 +260,7 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
         ready = next.status === "ready"
         setState(next)
         setError(null)
-        if ((next.status === "grant" || next.status === "install") && document.visibilityState === "visible") timer = setTimeout(check, 15000)
+        if (!ready && document.visibilityState === "visible") timer = setTimeout(check, 15000)
       } catch (failure) {
         setError((failure as Error).message)
         if ((failure as Error).message.startsWith("Your GitHub sign-in")) meRefresh()
