@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
-import { type Agent, type Change, type ForkState, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
+import { type Agent, type Change, type ForkState, type MyFork, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import { diff, NOTE, noteDoc, withNote } from "./note.ts"
@@ -506,4 +506,19 @@ export const yours = (viewer: User, owner: string, name: string) =>
   GitHub.request<GitHubRepo>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
     Effect.map((seen) => !!seen.permissions?.push),
     Effect.orElseSucceed(() => false),
+  )
+
+type Node = { name: string; owner: { login: string }; parent: { nameWithOwner: string } | null; autofork: { id: string } | null }
+
+const MINE = `{ viewer { repositories(first: 100, isFork: true, ownerAffiliations: [OWNER, ORGANIZATION_MEMBER], orderBy: { field: PUSHED_AT, direction: DESC }) {
+  nodes { name owner { login } parent { nameWithOwner } autofork: object(expression: "HEAD:.autofork/config.json") { id } }
+} } }`
+
+export const mine = (user: User) =>
+  GitHub.request<{ data?: { viewer: { repositories: { nodes: Node[] } } } }>(user.token, "POST", "/graphql", { query: MINE }).pipe(
+    Effect.map(({ data }) =>
+      (data?.viewer.repositories.nodes ?? [])
+        .filter((repo) => repo.autofork)
+        .map((repo): MyFork => ({ owner: repo.owner.login, name: repo.name, upstream: repo.parent?.nameWithOwner ?? null })),
+    ),
   )

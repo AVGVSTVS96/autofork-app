@@ -85,6 +85,35 @@ nav .links { align-items: center; min-width: 0; }
 nav .links > :last-child { flex: none; white-space: nowrap; }
 .me { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); }
 .me img { width: 22px; height: 22px; border-radius: 50%; background: var(--tint); }
+
+/* the account menu: opens on a click or a resting pointer, and gives a stray pointer a moment to come back */
+.account { position: relative; }
+button.me { height: 44px; padding: 0; border: 0; background: none; font-size: inherit; cursor: pointer; }
+.me .chev { width: 12px; height: 12px; margin-left: -2px; color: var(--ink-3); transition: rotate .2s var(--out), color .15s ease; }
+.account.open .chev { rotate: 180deg; color: var(--ink); }
+@media (hover: hover) { button.me:hover .chev { color: var(--ink); } }
+.menu { position: absolute; top: calc(100% + 2px); right: -10px; width: min(280px, calc(100vw - 24px)); padding: 6px; background: var(--panel); border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 1px 2px rgb(14 14 18 / .04), 0 16px 40px -16px rgb(14 14 18 / .28); font-size: 15px; line-height: 1.35; color: var(--ink); white-space: normal; text-align: left; transform-origin: top right; opacity: 0; scale: .96; translate: 0 -4px; visibility: hidden; transition: opacity .12s ease, scale .12s ease, translate .12s ease, visibility 0s linear .12s; z-index: 10; }
+.account.open .menu { opacity: 1; scale: 1; translate: 0; visibility: visible; transition: opacity .16s var(--out), scale .22s var(--out), translate .22s var(--out), visibility 0s; }
+.menu-who { padding: 8px 10px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--hair); font-size: 13px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-who b { color: var(--ink); font-weight: 600; }
+.menu-label { padding: 8px 10px 6px; font: 400 12px/1 var(--mono); color: var(--ink-3); }
+.menu-list { display: grid; max-height: min(50vh, 360px); overflow-y: auto; overscroll-behavior: contain; }
+.menu [role=menuitem] { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: 9px; background: none; font-size: 15px; text-align: left; color: var(--ink); cursor: pointer; transition: background-color .12s ease; }
+.menu [role=menuitem]:focus-visible { outline: 0; background: var(--tint); box-shadow: inset 0 0 0 1px var(--hair-2); }
+@media (hover: hover) { .menu [role=menuitem]:hover:not(:disabled) { background: var(--tint); } }
+@media (pointer: coarse) { .menu [role=menuitem] { min-height: 44px; } }
+.menu [role=menuitem]:active:not(:disabled) { transform: none; background: var(--tint); }
+.menu [role=menuitem]:disabled { opacity: 1; color: var(--ink-3); }
+.menu [role=menuitem] img { width: 20px; height: 20px; border-radius: 5px; flex: none; background: var(--tint); }
+.menu .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
+.menu .owner { color: var(--ink-3); font-weight: 400; }
+.menu a[data-status=active] .name { color: var(--you); }
+.menu [role=menuitem].bad { color: var(--del); }
+.menu hr { margin: 6px 4px; border: 0; border-top: 1px solid var(--hair); }
+.menu-note { display: grid; gap: 4px; padding: 6px 10px 8px; font-size: 14px; color: var(--ink-3); }
+.menu-note [role=menuitem] { margin-inline: -10px; width: calc(100% + 20px); color: var(--you); }
+.menu-sk { display: block; height: 20px; margin: 10px; border-radius: 6px; background: var(--tint); animation: breathe 1.6s ease-in-out infinite; }
+.menu-sk + .menu-sk { width: 60%; }
 .ghost { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .ghost span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -638,10 +667,13 @@ nav .links > :last-child { view-transition-name: me; }
   .wait::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick, .ask .chip, .spin, .fork > * { animation: none; }
   button:active:not(:disabled), .btn:active, .ask button:active:not(:disabled), .signin .btn:active { transform: none; }
   .t3-msgs, .t3-msgs.in { translate: none; }
+  .menu, .account.open .menu { scale: none; translate: none; }
+  .menu-sk { animation: none; }
 }
 
 @media (prefers-color-scheme: dark) {
   .yours-card .gh, .yours-card .cmd { background: color-mix(in oklab, var(--you-soft) 90%, white); }
   .mini { box-shadow: 0 0 0 1px var(--hair); }
+  .menu { border-color: var(--hair-2); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .7); }
   .t3 { border-color: var(--hair); }
 }

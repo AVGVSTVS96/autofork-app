@@ -3,6 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useContext, useEffect, useId, useImperativeHandle, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode, type Ref } from "react"
 import { split, squash } from "../shared/api.ts"
+import { Account } from "./Account.tsx"
 import * as client from "./client.ts"
 import facts from "./facts.json"
 import { known } from "./known.ts"
@@ -42,10 +43,7 @@ const Me = () => {
   const here = useHydrated() ? location : "/"
   const user = AsyncResult.isSuccess(me) ? me.value : null
   return user ? (
-    <span className="me">
-      <img src={user.avatar} alt="" width={22} height={22} />
-      <span>{user.login}</span>
-    </span>
+    <Account login={user.login} avatar={user.avatar} />
   ) : (
     <a href={`/api/github/start?back=${encodeURIComponent(here)}`}>Sign in</a>
   )

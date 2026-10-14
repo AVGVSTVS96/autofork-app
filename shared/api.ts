@@ -44,6 +44,9 @@ export type ForkState = typeof ForkState.Type
 
 export const Started = Schema.Struct({ owner: Schema.String, name: Schema.String })
 
+export const MyFork = Schema.Struct({ owner: Schema.String, name: Schema.String, upstream: Schema.NullOr(Schema.String) })
+export type MyFork = typeof MyFork.Type
+
 export const DeviceCode = Schema.Struct({ code: Schema.String, url: Schema.String })
 
 export const DeviceWait = Schema.Union([
@@ -96,6 +99,7 @@ export const AppGroup = HttpApiGroup.make("app")
     HttpApiEndpoint.get("resolve", "/api/resolve", { query: { q: Schema.String }, success: Request, error: Problem }),
     HttpApiEndpoint.get("me", "/api/me", { success: Schema.NullOr(Me) }),
     HttpApiEndpoint.post("signOut", "/api/signout"),
+    HttpApiEndpoint.get("mine", "/api/mine", { success: Schema.Array(MyFork), error: [Problem, SignedOut] }),
     HttpApiEndpoint.post("prepare", "/api/forks", {
       payload: Schema.Struct({ owner: Schema.String, name: Schema.String, into: Schema.optional(Schema.String) }),
       success: ForkState,

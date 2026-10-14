@@ -11,6 +11,8 @@ export class Client extends AtomHttpApi.Service<Client>()("autofork/Client", {
 
 export const me = Client.query("app", "me", {})
 
+export const mine = Client.query("app", "mine", { timeToLive: "5 minutes" })
+
 export const fork = (owner: string, name: string) => Client.query("app", "fork", { params: { owner, name } })
 
 export const yours = (owner: string, name: string) => Client.query("app", "yours", { params: { owner, name } })

@@ -42,6 +42,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     )
     .handle("me", () => viewer.pipe(Effect.map((user) => (user ? { login: user.login, avatar: user.avatar } : null))))
     .handle("signOut", () => Session.write({}))
+    .handle("mine", () => github(GitHub.signedIn.pipe(Effect.flatMap(Forks.mine))))
     .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into)))))
     .handle("claudeStart", () =>
       Effect.gen(function* () {
