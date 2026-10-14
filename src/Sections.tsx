@@ -131,37 +131,37 @@ export const MineToday = () => (
     <div className="t3" data-t3 />
     <ul className="asks">
       <li>
-        <img src={repoIcon("davidmokos/expo-gpt-live")} alt="" />
+        <img src={repoIcon("davidmokos/expo-gpt-live")} alt="" loading="lazy" />
         <span>
           <b>expo-gpt-live</b>, an Expo voice app template, but it calls my assistant, and I maintain it now
         </span>
       </li>
       <li>
-        <img src={repoIcon("herdrdev/herdr")} alt="" />
+        <img src={repoIcon("herdrdev/herdr")} alt="" loading="lazy" />
         <span>
           <b>herdr</b>, but every pane shows its ID on its border
         </span>
       </li>
       <li>
-        <img src={repoIcon("block/buzz")} alt="" />
+        <img src={repoIcon("block/buzz")} alt="" loading="lazy" />
         <span>
           <b>Buzz</b>, but my agents share files with me, and I can suggest edits
         </span>
       </li>
       <li>
-        <img src={repoIcon("anthropics/claude-plugins-official")} alt="" />
+        <img src={repoIcon("anthropics/claude-plugins-official")} alt="" loading="lazy" />
         <span>
           <b>Claude Code's Telegram plugin</b>, but one bot runs many sessions, one for each forum topic
         </span>
       </li>
       <li>
-        <img src={repoIcon("pingdotgg/t3code")} alt="" />
+        <img src={repoIcon("pingdotgg/t3code")} alt="" loading="lazy" />
         <span>
           <b>T3 Code</b>, but the window title shows the thread I'm on
         </span>
       </li>
       <li>
-        <img src={repoIcon("AVGVSTVS96/autofork-app")} alt="" />
+        <img src={repoIcon("AVGVSTVS96/autofork-app")} alt="" loading="lazy" />
         <span>
           <b>autofork.com</b>, but its examples are real open requests, refreshed every 4 days
         </span>

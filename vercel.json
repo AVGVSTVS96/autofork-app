@@ -5,6 +5,8 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/", "has": [{ "type": "query", "key": "q" }], "destination": "/app.html" },
+    { "source": "/", "destination": "/home.html" },
+    { "source": "/(.*)", "destination": "/app.html" }
   ]
 }

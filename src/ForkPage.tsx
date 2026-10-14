@@ -1,4 +1,5 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
+import { getRouteApi } from "@tanstack/react-router"
 import * as Option from "effect/Option"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState } from "react"
@@ -7,7 +8,15 @@ import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
 import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, useTitle } from "./ui.tsx"
 
-export const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
+const route = getRouteApi("/$owner/$name")
+
+export const ForkRoute = () => {
+  const { owner, name } = route.useParams()
+  const { since } = route.useSearch()
+  return <ForkPage owner={owner} name={name} since={since} />
+}
+
+const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
   useTitle(`${owner}/${name} · autofork`)
   const result = useAtomValue(atom)

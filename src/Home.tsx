@@ -1,7 +1,7 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useNavigate } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react"
 import { isAgent, split, type Agent, type ForkState, type Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
 import examples from "./examples.json"
@@ -92,8 +92,10 @@ const Start = ({ q, agent, error }: { q: string; agent: Agent | undefined; error
       <Nav />
       <main className="start">
         <Headline />
-        <Ask key={q} initial={q} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
-        <Flow key={q} q={q} agent={agent} error={error} />
+        <Fragment key={q}>
+          <Ask initial={q} onSubmit={(text) => ask(text, agent)} examples={EXAMPLES} label="An open source app and what you'd change" action="Fork it" />
+          <Flow q={q} agent={agent} error={error} />
+        </Fragment>
       </main>
     </div>
   )

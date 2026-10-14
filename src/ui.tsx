@@ -1,7 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react"
 import { split, squash } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
@@ -21,7 +21,7 @@ const Logo = () => <Svg src={logo} className="logo" />
 
 export const Nav = ({ children }: { children?: ReactNode }) => (
   <nav>
-    <Link to="/" search={{}} className="brand" aria-label="autofork">
+    <Link to="/" search={{}} activeOptions={{ includeSearch: false }} className="brand" aria-label="autofork">
       <Logo />
     </Link>
     <div className="links">
@@ -31,9 +31,15 @@ export const Nav = ({ children }: { children?: ReactNode }) => (
   </nav>
 )
 
+const unchanging = () => () => {}
+
+/* False while hydrating the prerendered home page, so the first render matches the HTML built for "/" */
+const useHydrated = () => useSyncExternalStore(unchanging, () => true, () => false)
+
 const Me = () => {
   const me = useAtomValue(client.me)
-  const here = useRouterState({ select: (state) => state.location.href })
+  const location = useRouterState({ select: (state) => state.location.href })
+  const here = useHydrated() ? location : "/"
   const user = AsyncResult.isSuccess(me) ? me.value : null
   return user ? (
     <span className="me">
@@ -342,6 +348,11 @@ export const useTitle = (title: string | undefined) =>
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
+
+/* The reel's items are HTML the typer swaps in itself; React only puts the first one there, so the prerendered page shows it */
+const reelItem = (example: Example) => `<span><img src="${escape(example.avatar)}" alt="">${escape(example.app)}</span>`
+
 const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; live: boolean; onLand: (index: number) => void }) => {
   const root = useRef<HTMLSpanElement>(null)
   const badge = useRef<HTMLSpanElement>(null)
@@ -358,11 +369,8 @@ const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; l
 
     const item = (example: Example) => {
       const span = document.createElement("span")
-      const img = document.createElement("img")
-      img.src = example.avatar
-      img.alt = ""
-      span.append(img, example.app)
-      return span
+      span.innerHTML = reelItem(example)
+      return span.firstElementChild!
     }
     const fit = () => {
       chip.style.width = `${(strip.lastElementChild as HTMLElement).offsetWidth + 17}px`
@@ -422,10 +430,8 @@ const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; l
       }
     }
 
-    if (!strip.firstChild) {
-      land(current.current)
-      void document.fonts.ready.then(fit)
-    }
+    fit()
+    void document.fonts.ready.then(fit)
     if (on) void play()
     return () => {
       on = false
@@ -437,7 +443,7 @@ const Typer = ({ examples, live, onLand }: { examples: ReadonlyArray<Example>; l
   return (
     <span ref={root} className={live ? "typer live" : "typer"} aria-hidden="true">
       <span ref={badge} className="badge">
-        <span ref={reel} className="reel" />
+        <span ref={reel} className="reel" dangerouslySetInnerHTML={{ __html: reelItem(examples[0]!) }} />
       </span>
       <span className="typed-line">
         <span ref={typed} className="typed" />

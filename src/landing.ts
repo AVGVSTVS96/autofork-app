@@ -1,5 +1,3 @@
-import { mount } from "./t3.ts"
-
 const NS = "http://www.w3.org/2000/svg"
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms))
@@ -408,7 +406,7 @@ const lineage = (root: HTMLElement) => {
 }
 
 export const start = (page: HTMLElement) => {
-  mount(page.querySelector("[data-t3]"))
+  void import("./t3.ts").then(({ mount }) => mount(page.querySelector("[data-t3]")))
   const stops = [graph(page), story(page.querySelector("[data-story]")!), lineage(page.querySelector("[data-lineage]")!)]
   return () => stops.forEach((stop) => stop())
 }
