@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
-import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, useTitle } from "./ui.tsx"
+import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, Retry, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/$owner/$name")
 
@@ -59,7 +59,7 @@ const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: 
         {fork ? (
           <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} yours={AsyncResult.isSuccess(mine) && mine.value} />
         ) : AsyncResult.isFailure(result) ? (
-          <p className="note bad">{client.failure(result.cause)}</p>
+          <Retry className="note" message={client.failure(result.cause)} onRetry={refresh} />
         ) : (
           <p className="note wait">Loading {owner}/{name}…</p>
         )}

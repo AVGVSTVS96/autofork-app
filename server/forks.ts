@@ -184,21 +184,22 @@ const listDir = (token: GitHub.Token, owner: string, name: string, path: string)
     Effect.catchIf(GitHub.missing, () => Effect.succeed([])),
   )
 
-const findFork = (user: User, upstream: GitHubRepo, into: string) =>
-  Effect.gen(function* () {
-    const existing = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${into}/${upstream.name}`).pipe(
-      Effect.map((repo) => (repo.parent?.full_name === upstream.full_name ? repo : null)),
-      Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
-    )
-    if (existing) return existing
-    const target = into === user.login ? {} : { organization: into }
-    return yield* GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, { default_branch_only: true, ...target }).pipe(
-      Effect.map((fork) => fork as GitHubRepo | null),
-      Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
-    )
-  })
+const existingFork = (user: User, upstream: GitHubRepo, into: string) =>
+  GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${into}/${upstream.name}`).pipe(
+    Effect.map((repo) => (repo.parent?.full_name === upstream.full_name ? repo : null)),
+    Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+  )
 
-type Installation = { id: number; account: { login: string; type: string } }
+const makeFork = (user: User, upstream: GitHubRepo, into: string) =>
+  GitHub.request<GitHubRepo>(user.token, "POST", `/repos/${upstream.full_name}/forks`, {
+    default_branch_only: true,
+    ...(into === user.login ? {} : { organization: into }),
+  }).pipe(
+    Effect.map((fork) => fork as GitHubRepo | null),
+    Effect.catchIf((error) => error.status === 403, () => Effect.succeed(null)),
+  )
+
+type Installation = { id: number; account: { login: string; type: string }; repository_selection: "all" | "selected" }
 
 const installations = (user: User) =>
   GitHub.request<{ installations: Installation[] }>(user.token, "GET", "/user/installations").pipe(
@@ -219,7 +220,8 @@ const reachable = (user: User, owner: string, name: string) =>
     Effect.catch(() => Effect.succeed(false)),
   )
 
-export const prepare = (user: User, owner: string, name: string, into: string | undefined) =>
+/* With preview, nothing is made: a fork autofork could make comes back as "new", so nobody who backs out keeps a stray fork */
+export const prepare = (user: User, owner: string, name: string, into: string | undefined, preview: boolean) =>
   Effect.gen(function* () {
     const installed = yield* installations(user)
     const places = [user.login, ...installed.filter((each) => each.account.type === "Organization").map((each) => each.account.login)]
@@ -229,13 +231,18 @@ export const prepare = (user: User, owner: string, name: string, into: string | 
     )
     if (upstream.private) return yield* new Problem({ message: "autofork works with public repos." })
     if (upstream.owner.login === place) return yield* new Problem({ message: "That repo is already yours. Name the repo you'd fork." })
-    if (!installed.some((each) => each.account.login === place)) {
+    const installation = installed.find((each) => each.account.login === place)
+    if (!installation) {
       const { appSlug } = yield* Env
       return { owner: place, name: upstream.name, status: "install", link: `https://github.com/apps/${appSlug}/installations/new`, places } satisfies ForkState
     }
-    const fork = yield* findFork(user, upstream, place).pipe(
+    const fork = yield* existingFork(user, upstream, place).pipe(
+      Effect.flatMap((found) => (found || preview ? Effect.succeed(found) : makeFork(user, upstream, place))),
       Effect.catchIf((error) => !GitHub.busy(error), problem("GitHub couldn't make the fork. Try again in a moment.")),
     )
+    if (!fork && preview && installation.repository_selection === "all") {
+      return { owner: place, name: upstream.name, status: "new", link: null, places } satisfies ForkState
+    }
     if (!fork) {
       return { owner: place, name: upstream.name, status: "fork", link: `https://github.com/${upstream.full_name}/fork`, places } satisfies ForkState
     }

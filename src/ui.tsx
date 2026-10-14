@@ -492,6 +492,15 @@ export const Item = ({ state, children, end, detail }: { state: "ok" | "now" | "
   </li>
 )
 
+export const Retry = ({ message, onRetry, className }: { message: string; onRetry: () => void; className?: string }) => (
+  <div className={className ? `retry ${className}` : "retry"} role="alert">
+    <p className="bad">{message}</p>
+    <button type="button" className="btn" onClick={onRetry}>
+      Try again
+    </button>
+  </div>
+)
+
 export const stars = (count: number) => (count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count))
 
 export const GitHubIcon = () => (

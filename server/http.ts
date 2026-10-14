@@ -43,7 +43,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("me", () => viewer.pipe(Effect.map((user) => (user ? { login: user.login, avatar: user.avatar } : null))))
     .handle("signOut", () => Session.write({}))
     .handle("mine", () => github(GitHub.signedIn.pipe(Effect.flatMap(Forks.mine))))
-    .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into)))))
+    .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into, payload.preview ?? false)))))
     .handle("claudeStart", () =>
       Effect.gen(function* () {
         const { url, verifier, state } = Agents.claudeStart()
@@ -152,6 +152,16 @@ const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>
   ),
 )
 
+/* What a visitor's browser saw when a request failed, so a failure that never reached the server still leaves a trace in the logs */
+const clientLog = HttpRouter.add("POST", "/api/log", (request) =>
+  Effect.gen(function* () {
+    const body = yield* request.text
+    const { user } = yield* Session.read
+    console.warn(`client ${user?.login ?? "anonymous"} ${body.slice(0, 4000)}`)
+    return HttpServerResponse.empty({ status: 204 })
+  }).pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 204 }))),
+)
+
 const DAY = "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
 const MINUTE = "public, max-age=60, s-maxage=60"
 
@@ -179,7 +189,7 @@ const icon = HttpRouter.add("GET", "/api/icon/:owner/:name", (request) =>
   }),
 )
 
-const Routes = Layer.mergeAll(signIn, callback, codexAuth, icon)
+const Routes = Layer.mergeAll(signIn, callback, codexAuth, icon, clientLog)
 
 export const app = HttpRouter.toWebHandler(
   Layer.mergeAll(HttpApiBuilder.layer(Api).pipe(Layer.provide(AppLive)), Routes).pipe(

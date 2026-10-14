@@ -1,7 +1,7 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useNavigate } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { Fragment, useEffect, useRef, useState, type FormEvent } from "react"
+import { Fragment, useEffect, useEffectEvent, useRef, useState, type FormEvent } from "react"
 import { isAgent, split, type Agent, type ForkState, type Repo } from "../shared/api.ts"
 import * as client from "./client.ts"
 import examples from "./examples.json"
@@ -9,7 +9,7 @@ import facts from "./facts.json"
 import { start } from "./landing.ts"
 import { History, Meant, MineToday, Yours, type Mine } from "./Sections.tsx"
 import { known, repoIcon, type Found } from "./known.ts"
-import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, useTitle, type AskHandle, type Example } from "./ui.tsx"
+import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, Retry, stars, useTitle, type AskHandle, type Example } from "./ui.tsx"
 
 const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, change }) => ({ app, change, avatar: known(app)!.repo.avatar }))
 
@@ -121,12 +121,15 @@ const Flow = ({ q, agent, error }: { q: string; agent: Agent | undefined; error:
 
 type Asked = { app: string; initialChange: string; agent: Agent | undefined; error: string | undefined }
 
-const Lookup = (asked: Asked) =>
-  AsyncResult.match(useAtomValue(client.resolve(asked.app)), {
+const Lookup = (asked: Asked) => {
+  const atom = client.resolve(asked.app)
+  const retry = useAtomRefresh(atom)
+  return AsyncResult.match(useAtomValue(atom), {
     onInitial: () => <Plan found={undefined} {...asked} />,
-    onFailure: ({ cause }) => <p className="note bad">{client.failure(cause)}</p>,
+    onFailure: ({ cause }) => <Retry className="note" message={client.failure(cause)} onRetry={retry} />,
     onSuccess: ({ value }) => <Plan found={value} {...asked} />,
   })
+}
 
 const Sk = ({ w }: { w: string }) => <span className="sk" style={{ width: w }} />
 
@@ -218,9 +221,9 @@ const Plan = ({ found, app, initialChange, agent, error }: Asked & { found: Foun
           <>
             <li className="now">
               <span className="n">2</span>
-              <div>
-                <p>Making your fork…</p>
-              </div>
+              <p>
+                Your fork: <Sk w="16ch" />
+              </p>
             </li>
             <li className="later">
               <span className="n">3</span>
@@ -244,34 +247,40 @@ const Plan = ({ found, app, initialChange, agent, error }: Asked & { found: Foun
   )
 }
 
+type Fork = { owner: string; name: string }
+
 const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: Agent | undefined }) => {
   const prepare = useAtomSet(client.prepare, { mode: "promiseExit" })
+  const meRefresh = useAtomRefresh(client.me)
   const [state, setState] = useState<ForkState | null>(null)
   const [into, setInto] = useState<string | undefined>(undefined)
+  const [pick, setPick] = useState(agent)
   const [error, setError] = useState<string | null>(null)
-  const meRefresh = useAtomRefresh(client.me)
+  const [attempt, setAttempt] = useState(0)
+  const committed = pick !== undefined
 
   useEffect(() => {
     let live = true
     let checking = false
-    let ready = false
+    let settled = false
     let last = 0
     let timer: ReturnType<typeof setTimeout>
     const check = async () => {
-      if (checking || ready || Date.now() - last < 3000) return
+      if (checking || settled || Date.now() - last < 3000) return
       checking = true
       clearTimeout(timer)
-      const exit = await prepare({ payload: { owner: repo.owner, name: repo.name, into } })
+      const exit = await prepare({ payload: { owner: repo.owner, name: repo.name, into, preview: !committed } })
       checking = false
       last = Date.now()
       if (!live) return
       try {
         const next = client.unwrap(exit)
-        ready = next.status === "ready"
+        settled = next.status === "ready" || next.status === "new"
         setState(next)
         setError(null)
-        if (!ready && document.visibilityState === "visible") timer = setTimeout(check, 15000)
+        if (!settled && document.visibilityState === "visible") timer = setTimeout(check, 15000)
       } catch (failure) {
+        settled = true
         setError((failure as Error).message)
         if ((failure as Error).message.startsWith("Your GitHub sign-in")) meRefresh()
       }
@@ -288,65 +297,87 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
       window.removeEventListener("focus", back)
       document.removeEventListener("visibilitychange", back)
     }
-  }, [repo.owner, repo.name, into])
+  }, [repo.owner, repo.name, into, committed, attempt])
+
+  const open = state?.status === "new" || state?.status === "ready"
+  const making = committed && state?.status === "new"
+  const fork = committed && state?.status === "ready" ? state : null
 
   return (
     <>
-      <li className={state?.status === "ready" ? "done" : "now"}>
+      <li className={open && !making ? "done" : "now"}>
         <span className="n">2</span>
         <div>
-        {state && state.places.length > 1 ? (
-          <div className="segments" role="group" aria-label="Fork into">
-            {state.places.map((place) => (
-              <button
-                type="button"
-                key={place}
-                className={place === state.owner ? "on" : ""}
-                onClick={() => {
-                  setState(null)
-                  setInto(place)
-                }}
-              >
-                {place}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {error ? (
-          <p className="bad">{error}</p>
-        ) : !state ? (
-          <p>Making your fork…</p>
-        ) : state.status === "ready" ? (
-          <p>
-            Your fork: <b>{state.owner}/{state.name}</b>
-          </p>
-        ) : state.status === "install" ? (
-          <div>
-            <p>Install autofork on GitHub so it can make your fork, then come back here.</p>
-            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
-              <GitHubIcon /> Install autofork
-            </a>
-          </div>
-        ) : state.status === "fork" ? (
-          <div>
-            <p>autofork can only see the repos you picked. Fork it on GitHub, then come back here.</p>
-            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
-              <GitHubIcon /> Fork {repo.name} on GitHub
-            </a>
-          </div>
-        ) : (
-          <div>
+          {state && state.places.length > 1 && !committed ? (
+            <div className="segments" role="group" aria-label="Fork into">
+              {state.places.map((place) => (
+                <button
+                  type="button"
+                  key={place}
+                  className={place === state.owner ? "on" : ""}
+                  onClick={() => {
+                    setState(null)
+                    setInto(place)
+                  }}
+                >
+                  {place}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {error ? (
+            <Retry
+              message={error}
+              onRetry={() => {
+                setError(null)
+                setAttempt((n) => n + 1)
+              }}
+            />
+          ) : !state ? (
             <p>
-              Add <b>{state.owner}/{state.name}</b> to autofork's repos on GitHub, then come back here.
+              Your fork: <Sk w="16ch" />
             </p>
-            <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
-              <GitHubIcon /> Open autofork's access
-            </a>
-          </div>
-        )}
+          ) : making ? (
+            <p className="wait">
+              Making <b>{state.owner}/{state.name}</b>…
+            </p>
+          ) : state.status === "new" ? (
+            <p>
+              Your fork will be <b>{state.owner}/{state.name}</b>
+            </p>
+          ) : state.status === "ready" ? (
+            <p>
+              Your fork: <b>{state.owner}/{state.name}</b>
+            </p>
+          ) : state.status === "install" ? (
+            <div>
+              <p>Install autofork on GitHub so it can make your fork, then come back here.</p>
+              <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+                <GitHubIcon /> Install autofork
+              </a>
+            </div>
+          ) : state.status === "fork" ? (
+            <div>
+              <p>autofork can only see the repos you picked. Fork it on GitHub, then come back here.</p>
+              <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+                <GitHubIcon /> Fork {repo.name} on GitHub
+              </a>
+            </div>
+          ) : (
+            <div>
+              <p>
+                Add <b>{state.owner}/{state.name}</b> to autofork's repos on GitHub, then come back here.
+              </p>
+              <a className="btn primary" href={state.link ?? "#"} target="_blank" rel="noreferrer">
+                <GitHubIcon /> Open autofork's access
+              </a>
+            </div>
+          )}
         </div>
       </li>
-      {state?.status === "ready" ? <Connect owner={state.owner} name={state.name} change={change} agent={agent} /> : (
+      {open || committed ? (
+        <Connect fork={fork} pick={pick} onPick={setPick} change={change} />
+      ) : (
         <li className="later">
           <span className="n">3</span>
           <p>The agent builds it on your ChatGPT or Claude plan</p>
@@ -356,71 +387,85 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
   )
 }
 
-const Connect = ({ owner, name, change, agent }: { owner: string; name: string; change: string; agent: Agent | undefined }) => {
-  const [pick, setPick] = useState(agent)
-  return (
-    <li className="now">
-      <span className="n">3</span>
-      <div>
-        <p>Pick the plan the agent runs on. It works in your fork's GitHub Actions.</p>
-        <div className="choices">
-          <button type="button" className={pick === "chatgpt" ? "btn on" : "btn"} aria-pressed={pick === "chatgpt"} onClick={() => setPick("chatgpt")}>
-            <OpenAIIcon /> ChatGPT
-          </button>
-          <button type="button" className={pick === "claude" ? "btn on" : "btn"} aria-pressed={pick === "claude"} onClick={() => setPick("claude")}>
-            <ClaudeIcon /> Claude
-          </button>
-        </div>
-        {pick === "chatgpt" ? <ChatGPT owner={owner} name={name} change={change} /> : null}
-        {pick === "claude" ? <Claude owner={owner} name={name} change={change} /> : null}
+const Connect = ({ fork, pick, onPick, change }: { fork: Fork | null; pick: Agent | undefined; onPick: (agent: Agent) => void; change: string }) => (
+  <li className="now">
+    <span className="n">3</span>
+    <div>
+      <p>Pick the plan the agent runs on. It works in your fork's GitHub Actions.</p>
+      <div className="choices">
+        <button type="button" className={pick === "chatgpt" ? "btn on" : "btn"} aria-pressed={pick === "chatgpt"} onClick={() => onPick("chatgpt")}>
+          <OpenAIIcon /> ChatGPT
+        </button>
+        <button type="button" className={pick === "claude" ? "btn on" : "btn"} aria-pressed={pick === "claude"} onClick={() => onPick("claude")}>
+          <ClaudeIcon /> Claude
+        </button>
       </div>
-    </li>
-  )
-}
+      {pick === "chatgpt" ? <ChatGPT fork={fork} change={change} /> : null}
+      {pick === "claude" ? <Claude fork={fork} change={change} /> : null}
+    </div>
+  </li>
+)
 
-const useStarted = (owner: string, name: string) => {
+const useStarted = () => {
   const navigate = useNavigate()
-  return () => void navigate({ to: "/$owner/$name", params: { owner, name }, search: { since: new Date(Date.now() - 5000).toISOString() } })
+  return ({ owner, name }: Fork) =>
+    void navigate({ to: "/$owner/$name", params: { owner, name }, search: { since: new Date(Date.now() - 5000).toISOString() } })
 }
 
-const ChatGPT = ({ owner, name, change }: { owner: string; name: string; change: string }) => {
+const ChatGPT = ({ fork, change }: { fork: Fork | null; change: string }) => {
   const start = useAtomSet(client.chatgptStart, { mode: "promiseExit" })
   const finish = useAtomSet(client.chatgptFinish, { mode: "promiseExit" })
-  const started = useStarted(owner, name)
+  const started = useStarted()
   const [device, setDevice] = useState<{ code: string; url: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const [copied, setCopied] = useState(false)
+  const signedIn = useEffectEvent((into: Fork) => finish({ params: into, payload: { change } }))
 
   useEffect(() => {
     let live = true
-    let timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      const exit = await finish({ params: { owner, name }, payload: { change } })
-      if (!live) return
-      try {
-        const result = client.unwrap(exit)
-        if (result.status === "started") return started()
-        timer = setTimeout(poll, 5000)
-      } catch (failure) {
-        setError((failure as Error).message)
-      }
-    }
     void start({}).then((exit) => {
       if (!live) return
       try {
         setDevice(client.unwrap(exit))
-        timer = setTimeout(poll, 5000)
       } catch (failure) {
         setError((failure as Error).message)
       }
     })
     return () => {
       live = false
+    }
+  }, [attempt])
+
+  useEffect(() => {
+    if (!device || !fork || error) return
+    let live = true
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      const exit = await signedIn({ owner: fork.owner, name: fork.name })
+      if (!live) return
+      try {
+        const result = client.unwrap(exit)
+        if (result.status === "started") return started(result)
+        timer = setTimeout(poll, 5000)
+      } catch (failure) {
+        setError((failure as Error).message)
+      }
+    }
+    timer = setTimeout(poll, 5000)
+    return () => {
+      live = false
       clearTimeout(timer)
     }
-  }, [])
+  }, [device, fork?.owner, fork?.name, error])
 
-  if (error) return <p className="bad">{error}</p>
+  const retry = () => {
+    setError(null)
+    setDevice(null)
+    setAttempt((n) => n + 1)
+  }
+
+  if (error) return <Retry message={error} onRetry={retry} />
   if (!device) return <p className="wait">Getting a code from ChatGPT…</p>
   return (
     <div className="device">
@@ -447,54 +492,85 @@ const ChatGPT = ({ owner, name, change }: { owner: string; name: string; change:
   )
 }
 
-const Claude = ({ owner, name, change }: { owner: string; name: string; change: string }) => {
+const Claude = ({ fork, change }: { fork: Fork | null; change: string }) => {
   const start = useAtomSet(client.claudeStart, { mode: "promiseExit" })
   const finish = useAtomSet(client.claudeFinish, { mode: "promiseExit" })
-  const started = useStarted(owner, name)
+  const started = useStarted()
   const [url, setUrl] = useState<string | null>(null)
   const [code, setCode] = useState("")
-  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const connect = useEffectEvent((into: Fork, pasted: string) => finish({ params: into, payload: { code: pasted, change } }))
 
   useEffect(() => {
+    let live = true
     void start({}).then((exit) => {
+      if (!live) return
       try {
         setUrl(client.unwrap(exit).url)
       } catch (failure) {
         setError((failure as Error).message)
       }
     })
-  }, [])
-
-  const connect = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError(null)
-    const exit = await finish({ params: { owner, name }, payload: { code, change } })
-    try {
-      client.unwrap(exit)
-      started()
-    } catch (failure) {
-      setError((failure as Error).message)
-      setBusy(false)
+    return () => {
+      live = false
     }
+  }, [attempt])
+
+  useEffect(() => {
+    if (!sent || !fork) return
+    let live = true
+    void connect({ owner: fork.owner, name: fork.name }, sent).then((exit) => {
+      if (!live) return
+      try {
+        started(client.unwrap(exit))
+      } catch (failure) {
+        setError((failure as Error).message)
+        setSent(null)
+      }
+    })
+    return () => {
+      live = false
+    }
+  }, [sent, fork?.owner, fork?.name])
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setSent(code.trim())
   }
 
-  if (!url) return error ? <p className="bad">{error}</p> : <p className="wait">Getting Claude's sign-in ready…</p>
+  if (!url) {
+    return error ? (
+      <Retry
+        message={error}
+        onRetry={() => {
+          setError(null)
+          setAttempt((n) => n + 1)
+        }}
+      />
+    ) : (
+      <p className="wait">Getting Claude's sign-in ready…</p>
+    )
+  }
   return (
-    <form className="device" onSubmit={connect}>
+    <form className="device" onSubmit={submit}>
       <p>Authorize on Claude's page, then copy the code it shows and paste it here.</p>
       <a className="btn primary" href={url} target="_blank" rel="noreferrer">
         <ClaudeIcon /> Open Claude sign-in
       </a>
       <div className="paste">
         <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="Paste the code" aria-label="Code from Claude" autoComplete="off" spellCheck={false} />
-        <button type="submit" disabled={!code.trim() || busy}>
-          {busy ? "Starting…" : "Start"}
+        <button type="submit" disabled={!code.trim() || !!sent}>
+          {sent ? "Starting…" : error ? "Try again" : "Start"}
         </button>
       </div>
-      {error ? <p className="bad">{error}</p> : null}
+      {error ? (
+        <p className="bad" role="alert">
+          {error}
+        </p>
+      ) : null}
     </form>
   )
 }
-

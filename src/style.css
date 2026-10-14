@@ -188,6 +188,8 @@ button:disabled { opacity: .4; cursor: default; }
 
 /* the flow: the plan under the composer, then your fork's page */
 .bad { color: var(--del); }
+.retry { display: grid; gap: 14px; justify-items: start; }
+.start .note.retry, .fork .note.retry { margin-top: 28px; font-size: 17px; }
 .fine { font-size: 14px; line-height: 1.45; color: var(--ink-3); max-width: 50ch; }
 .wait { display: inline-flex; align-items: center; gap: 12px; color: var(--ink-2); }
 .wait::before, .item.now > i { content: ""; width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--you); box-shadow: 0 0 0 4px var(--you-soft); animation: pulse 1.6s ease-in-out infinite; }
@@ -665,6 +667,8 @@ nav .links > :last-child { view-transition-name: me; }
   html { scroll-behavior: auto; }
   .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
   .wait::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick, .ask .chip, .spin, .fork > * { animation: none; }
+  .menu, .account.open .menu { scale: none; translate: none; }
+  .menu-sk { animation: none; }
   button:active:not(:disabled), .btn:active, .ask button:active:not(:disabled), .signin .btn:active { transform: none; }
   .t3-msgs, .t3-msgs.in { translate: none; }
   .menu, .account.open .menu { scale: none; translate: none; }
@@ -672,6 +676,7 @@ nav .links > :last-child { view-transition-name: me; }
 }
 
 @media (prefers-color-scheme: dark) {
+  .menu { border-color: var(--hair-2); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .7); }
   .yours-card .gh, .yours-card .cmd { background: color-mix(in oklab, var(--you-soft) 90%, white); }
   .mini { box-shadow: 0 0 0 1px var(--hair); }
   .menu { border-color: var(--hair-2); box-shadow: 0 16px 40px -12px rgb(0 0 0 / .7); }

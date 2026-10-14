@@ -36,7 +36,7 @@ export const isAgent = Schema.is(Agent)
 export const ForkState = Schema.Struct({
   owner: Schema.String,
   name: Schema.String,
-  status: Schema.Literals(["ready", "install", "fork", "grant"]),
+  status: Schema.Literals(["new", "ready", "install", "fork", "grant"]),
   link: Schema.NullOr(Schema.String),
   places: Schema.Array(Schema.String),
 })
@@ -101,7 +101,7 @@ export const AppGroup = HttpApiGroup.make("app")
     HttpApiEndpoint.post("signOut", "/api/signout"),
     HttpApiEndpoint.get("mine", "/api/mine", { success: Schema.Array(MyFork), error: [Problem, SignedOut] }),
     HttpApiEndpoint.post("prepare", "/api/forks", {
-      payload: Schema.Struct({ owner: Schema.String, name: Schema.String, into: Schema.optional(Schema.String) }),
+      payload: Schema.Struct({ owner: Schema.String, name: Schema.String, into: Schema.optional(Schema.String), preview: Schema.optional(Schema.Boolean) }),
       success: ForkState,
       error: [Problem, SignedOut],
     }),
