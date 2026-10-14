@@ -16,10 +16,10 @@ const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, change })
 const Headline = () => (
   <h1>
     <span className="make" data-fork>
-      Fork any <span className="whole">open-source</span> app
+      Customized forks
     </span>
     <span className="you never" data-you>
-      and never rebase it again.
+      that maintain themselves.
     </span>
   </h1>
 )
@@ -54,7 +54,7 @@ const Landing = () => {
       <main className="home">
         <header className="hero">
           <Headline />
-          <p className="sub">Personal forks of open-source apps that update themselves.</p>
+          <p className="sub">Every release, your changes are reapplied intelligently. When they ship the same feature, autofork stops applying yours.</p>
           <Ask
             ref={composer}
             id="ask"
