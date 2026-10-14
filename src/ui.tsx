@@ -1,7 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react"
+import { useContext, useEffect, useId, useImperativeHandle, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode, type Ref } from "react"
 import { split, squash } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
@@ -137,9 +137,13 @@ const BUT = /^but\s+/i
 
 type Guess = { app: string; name: string; avatar: string | undefined }
 
+export type Face = { name: string; avatar: string }
+export type AskHandle = { fill: (ask: { app: string; change: string; face?: Face; keyboard: boolean }) => void }
+
 const words = (text: string) => text.trim().split(/\s+/).length
 
 export const Ask = ({
+  ref,
   id,
   initial = "",
   onSubmit,
@@ -147,6 +151,7 @@ export const Ask = ({
   action,
   examples,
 }: {
+  ref?: Ref<AskHandle>
   id?: string
   initial?: string
   onSubmit: (ask: string, via?: string) => void
@@ -161,8 +166,10 @@ export const Ask = ({
   const [idle, setIdle] = useState(true)
   const [asking, setAsking] = useState("")
   const [found, setFound] = useState<Guess | undefined>(undefined)
+  const [face, setFace] = useState<Guess | undefined>(undefined)
   const resume = useRef<ReturnType<typeof setTimeout>>(undefined)
   const input = useRef<HTMLTextAreaElement>(null)
+  const arrival = useRef<() => void>(undefined)
   const live = idle && !app && !text
   const fallback = sentence(examples[current]!)
   const typed = app ? "" : text.trim()
@@ -188,6 +195,31 @@ export const Ask = ({
     if (cut && cut[1]!.trim()) chip(cut[1]!.trim(), cut[2]!)
     else setText(app && !text ? next.trimStart() : next)
   }
+  /* An ask picked elsewhere on the page: the composer comes into view, and the ask lands in it once the scroll settles, so you see it arrive */
+  useImperativeHandle(ref, () => ({
+    fill: ({ app: name, change, face: picked, keyboard }) => {
+      const field = input.current!
+      const form = field.form!
+      const land = () => {
+        setFace(picked && { app: name, ...picked })
+        chip(name, change)
+        if (!keyboard && !matchMedia("(pointer: fine)").matches) return
+        requestAnimationFrame(() => {
+          field.focus({ preventScroll: true })
+          field.setSelectionRange(field.value.length, field.value.length)
+        })
+      }
+      const { top, bottom } = form.getBoundingClientRect()
+      if (arrival.current) document.removeEventListener("scrollend", arrival.current)
+      arrival.current = undefined
+      if ((top >= 0 && bottom <= innerHeight) || !("onscrollend" in document)) land()
+      else {
+        arrival.current = land
+        document.addEventListener("scrollend", land, { once: true })
+      }
+      form.scrollIntoView({ block: "center" })
+    },
+  }))
   const unchip = () => {
     const rest = text.trim().replace(BUT, "")
     const back = rest ? `${app}, but ${rest}` : app
@@ -229,7 +261,7 @@ export const Ask = ({
   return (
     <form className="ask" id={id} onSubmit={submit}>
       <label className="field slots" htmlFor={entry}>
-        {app ? <Chip app={app} onEdit={unchip} /> : null}
+        {app ? <Chip key={app} app={app} face={face?.app === app ? face : undefined} onEdit={unchip} /> : null}
         <span className="entry">
           <textarea
             id={entry}
@@ -318,15 +350,15 @@ const Pick = ({ guess, onPick }: { guess: Guess; onPick: () => void }) => (
   </button>
 )
 
-const Chip = ({ app, onEdit }: { app: string; onEdit: () => void }) => {
+const Chip = ({ app, face, onEdit }: { app: string; face: Guess | undefined; onEdit: () => void }) => {
   const ready = known(app)
-  return ready ? <Badge name={app} avatar={ready.repo.avatar} onEdit={onEdit} /> : <Lookup app={app} onEdit={onEdit} />
+  return ready ? <Badge name={app} avatar={ready.repo.avatar} onEdit={onEdit} /> : <Lookup app={app} face={face} onEdit={onEdit} />
 }
 
-const Lookup = ({ app, onEdit }: { app: string; onEdit: () => void }) => {
+const Lookup = ({ app, face, onEdit }: { app: string; face: Guess | undefined; onEdit: () => void }) => {
   const found = useAtomValue(client.resolve(app))
   const repo = AsyncResult.isSuccess(found) ? found.value.repo : undefined
-  return <Badge name={repo?.name ?? app} avatar={repo?.avatar} onEdit={onEdit} />
+  return <Badge name={repo?.name ?? face?.name ?? app} avatar={repo?.avatar ?? face?.avatar} onEdit={onEdit} />
 }
 
 const Badge = ({ name, avatar, onEdit }: { name: string; avatar: string | undefined; onEdit: () => void }) => (

@@ -7,9 +7,9 @@ import * as client from "./client.ts"
 import examples from "./examples.json"
 import facts from "./facts.json"
 import { start } from "./landing.ts"
-import { History, Meant, MineToday, Yours } from "./Sections.tsx"
-import { known, type Found } from "./known.ts"
-import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, useTitle, type Example } from "./ui.tsx"
+import { History, Meant, MineToday, Yours, type Mine } from "./Sections.tsx"
+import { known, repoIcon, type Found } from "./known.ts"
+import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, useTitle, type AskHandle, type Example } from "./ui.tsx"
 
 const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, change }) => ({ app, change, avatar: known(app)!.repo.avatar }))
 
@@ -35,7 +35,14 @@ export const Home = ({ q, agent, error }: { q: string; agent: Agent | undefined;
 const Landing = () => {
   const ask = useAsk()
   const page = useRef<HTMLDivElement>(null)
+  const composer = useRef<AskHandle>(null)
   useEffect(() => start(page.current!), [])
+  const pick = ({ repo, name, change, ask }: Mine, keyboard: boolean) =>
+    composer.current?.fill({
+      change: ask ?? change,
+      keyboard,
+      ...(known(name) ? { app: name } : { app: repo, face: { name: repo.split("/")[1]!, avatar: repoIcon(repo) } }),
+    })
   return (
     <div className="page" ref={page}>
       <svg className="graph" aria-hidden="true" />
@@ -49,6 +56,7 @@ const Landing = () => {
           <Headline />
           <p className="sub">Personal forks of open-source apps that update themselves.</p>
           <Ask
+            ref={composer}
             id="ask"
             onSubmit={(text, via) => ask(text, isAgent(via) ? via : undefined)}
             examples={EXAMPLES}
@@ -74,7 +82,7 @@ const Landing = () => {
           <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
         </header>
         <Meant />
-        <MineToday />
+        <MineToday onPick={pick} />
         <Yours />
         <History />
       </main>

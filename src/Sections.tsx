@@ -122,7 +122,23 @@ export const Meant = () => (
   </section>
 )
 
-export const MineToday = () => (
+export type Mine = { repo: string; name: string; about?: string; change: string; ask?: string }
+
+const mine: ReadonlyArray<Mine> = [
+  { repo: "davidmokos/expo-gpt-live", name: "expo-gpt-live", about: "an Expo voice app template", change: "it calls my assistant, and I maintain it now" },
+  { repo: "herdrdev/herdr", name: "herdr", change: "every pane shows its ID on its border" },
+  { repo: "block/buzz", name: "Buzz", change: "my agents share files with me, and I can suggest edits" },
+  {
+    repo: "anthropics/claude-plugins-official",
+    name: "Claude Code's Telegram plugin",
+    change: "one bot runs many sessions, one for each forum topic",
+    ask: "its Telegram plugin runs many sessions on one bot, one for each forum topic",
+  },
+  { repo: "pingdotgg/t3code", name: "T3 Code", change: "the window title shows the thread I'm on" },
+  { repo: "AVGVSTVS96/autofork-app", name: "autofork.com", change: "its examples are real open requests, refreshed every 4 days" },
+]
+
+export const MineToday = ({ onPick }: { onPick: (fork: Mine, keyboard: boolean) => void }) => (
   <section className="mine-today">
     <h2 data-node>My forks, today.</h2>
     <p className="line">
@@ -130,42 +146,17 @@ export const MineToday = () => (
     </p>
     <div className="t3" data-t3 />
     <ul className="asks">
-      <li>
-        <img src={repoIcon("davidmokos/expo-gpt-live")} alt="" loading="lazy" />
-        <span>
-          <b>expo-gpt-live</b>, an Expo voice app template, but it calls my assistant, and I maintain it now
-        </span>
-      </li>
-      <li>
-        <img src={repoIcon("herdrdev/herdr")} alt="" loading="lazy" />
-        <span>
-          <b>herdr</b>, but every pane shows its ID on its border
-        </span>
-      </li>
-      <li>
-        <img src={repoIcon("block/buzz")} alt="" loading="lazy" />
-        <span>
-          <b>Buzz</b>, but my agents share files with me, and I can suggest edits
-        </span>
-      </li>
-      <li>
-        <img src={repoIcon("anthropics/claude-plugins-official")} alt="" loading="lazy" />
-        <span>
-          <b>Claude Code's Telegram plugin</b>, but one bot runs many sessions, one for each forum topic
-        </span>
-      </li>
-      <li>
-        <img src={repoIcon("pingdotgg/t3code")} alt="" loading="lazy" />
-        <span>
-          <b>T3 Code</b>, but the window title shows the thread I'm on
-        </span>
-      </li>
-      <li>
-        <img src={repoIcon("AVGVSTVS96/autofork-app")} alt="" loading="lazy" />
-        <span>
-          <b>autofork.com</b>, but its examples are real open requests, refreshed every 4 days
-        </span>
-      </li>
+      {mine.map((fork) => (
+        <li key={fork.repo}>
+          <button type="button" onClick={(event) => onPick(fork, event.detail === 0)}>
+            <img src={repoIcon(fork.repo)} alt="" loading="lazy" />
+            <span>
+              <b>{fork.name}</b>
+              {fork.about ? `, ${fork.about}` : ""}, but {fork.change}
+            </span>
+          </button>
+        </li>
+      ))}
     </ul>
   </section>
 )
