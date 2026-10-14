@@ -339,7 +339,9 @@ const Prepare = ({ repo, change, agent }: { repo: Repo; change: string; agent: A
             </p>
           ) : making ? (
             <p className="wait">
-              Making <b>{state.owner}/{state.name}</b>…
+              <span>
+                Making <b>{state.owner}/{state.name}</b>…
+              </span>
             </p>
           ) : state.status === "new" ? (
             <p>
