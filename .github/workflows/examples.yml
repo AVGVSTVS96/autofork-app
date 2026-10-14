@@ -21,6 +21,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
       - id: due
         run: bun .github/examples/refresh.ts due
       - if: steps.due.outputs.due == 'true'
