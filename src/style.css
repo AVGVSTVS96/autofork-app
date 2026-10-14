@@ -86,8 +86,9 @@ nav .links > :last-child { flex: none; white-space: nowrap; }
 .ghost { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .ghost span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.hero h1 { margin: clamp(48px, 10vh, 112px) 0 0; font-size: clamp(50px, 8.4vw, 128px); line-height: .96; letter-spacing: -0.028em; font-weight: 800; }
+.hero h1 { margin: clamp(48px, 10vh, 112px) 0 0; font-size: clamp(42px, 6.2vw, 96px); line-height: .96; letter-spacing: -0.028em; font-weight: 800; }
 .hero h1 > span { display: block; }
+.whole { white-space: nowrap; }
 .you { color: var(--you); }
 .sub { margin: 30px 0 34px; font-size: 22px; line-height: 1.4; color: var(--ink-2); max-width: 44ch; letter-spacing: -0.01em; text-wrap: balance; }
 .hero .ask { max-width: 720px; }
@@ -545,7 +546,7 @@ footer .links { display: flex; gap: 22px; }
   .me span { display: none; }
   .page { --rail: 0px; --gutter: 20px; }
   .hero h1 { margin-top: 148px; }
-  .hero h1 { font-size: min(12.4vw, 60px); }
+  .hero h1 { font-size: min(11vw, 48px); }
   .start h1 { font-size: 22px; }
   .page > section { padding-top: 132px; }
   h2 { font-size: 34px; }
@@ -589,10 +590,9 @@ footer .links { display: flex; gap: 22px; }
 @keyframes arrive { from { opacity: 0; filter: blur(4px); } }
 
 /* Fork it: the headline and composer carry over to the flow page and back while the rest crossfades */
-.make { width: fit-content; view-transition-name: make; }
-.keep, .updates { display: inline-block; }
-.keep { view-transition-name: keep; }
-.updates { view-transition-name: updates; }
+.make, .never { width: fit-content; }
+.make { view-transition-name: make; }
+.never { view-transition-name: never; }
 .hero .ask, .start .ask { view-transition-name: ask; }
 .hero .ask > button, .start .ask > button { view-transition-name: ask-go; }
 nav .brand { view-transition-name: brand; }

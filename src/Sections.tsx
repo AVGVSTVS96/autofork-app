@@ -28,9 +28,9 @@ const Model = () => (
 
 export const Meant = () => (
   <section className="meant" id="how">
-    <h2 data-node>It keeps what you meant.</h2>
+    <h2 data-node>Your change is kept in plain words.</h2>
     <p className="line">
-      Your change is saved as what you asked for, not only as code. When they rewrite things or ship something new, the agent rebuilds yours on top of theirs.
+      Each new release, your changes go back on top. When one no longer fits their new code, an agent rebuilds it from your words.
     </p>
 
     <div className="story" data-story>
@@ -124,9 +124,9 @@ export const Meant = () => (
 
 export const MineToday = () => (
   <section className="mine-today">
-    <h2 data-node>Mine, today.</h2>
+    <h2 data-node>My forks, today.</h2>
     <p className="line">
-      My T3 Code fork took {t3fork!.upstreamCommitsAbsorbed} commits from T3 Code in its first two days. One change broke on day one and the agent rebuilt it.
+      My T3 Code fork took {t3fork!.upstreamCommitsAbsorbed} commits from T3 Code in its first two days, and I never rebased it. One change broke on day one and the agent rebuilt it.
     </p>
     <div className="t3" data-t3 />
     <ul className="asks">
@@ -181,8 +181,8 @@ export const Yours = () => {
     <section className="yours" id="self">
       <div className="yours-card">
         <div>
-          <h2 data-node>Yours.</h2>
-          <p className="line">The fork lives in your GitHub and runs in your own GitHub Actions, on your own plan. Free on public forks.</p>
+          <h2 data-node>It runs in your GitHub.</h2>
+          <p className="line">Your fork lives in your GitHub account and updates itself in its own GitHub Actions, on the ChatGPT or Claude plan you already pay for. Free on public forks.</p>
         </div>
         <div className="gh">
           <div className="gh-name">
