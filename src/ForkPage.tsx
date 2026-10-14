@@ -5,10 +5,11 @@ import { useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
-import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon } from "./ui.tsx"
+import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, useTitle } from "./ui.tsx"
 
 export const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
+  useTitle(`${owner}/${name} · autofork`)
   const result = useAtomValue(atom)
   const refresh = useAtomRefresh(atom)
   const mine = useAtomValue(useMemo(() => client.yours(owner, name), [owner, name]))
@@ -57,6 +58,8 @@ export const ForkPage = ({ owner, name, since }: { owner: string; name: string; 
     </div>
   )
 }
+
+const Ticks = ({ text }: { text: string }) => text.split("`").map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))
 
 const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; waiting: boolean; yours: boolean }) => {
   const app = fork.upstream?.split("/")[1] ?? fork.name
@@ -108,11 +111,11 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
                   </p>
                 }
               >
-                {change.text}
+                <Ticks text={change.text} />
               </Item>
             ) : (
               <Item key={change.id} state={change.state === "built" ? "ok" : "now"} end={change.state}>
-                {change.text}
+                <Ticks text={change.text} />
               </Item>
             ),
           )

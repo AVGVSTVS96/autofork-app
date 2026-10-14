@@ -185,8 +185,8 @@ export function mount(root: HTMLElement | null) {
 
   root.innerHTML = `
     <aside class="t3-side">
-      <div class="t3-title"><i class="lights"><b></b><b></b><b></b></i><button class="t3-icon" tabindex="-1">${I.sidebar}</button><span class="t3-brand">${t3}<span>Code</span></span></div>
-      <div class="t3-tools"><span class="t3-search">${I.search}Search</span><button class="t3-icon" tabindex="-1">${I.filter}</button><button class="t3-icon" tabindex="-1">${I.addProject}</button><button class="t3-icon" tabindex="-1">${I.pen}</button></div>
+      <div class="t3-title"><i class="lights"><b></b><b></b><b></b></i><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.sidebar}</button><span class="t3-brand">${t3}<span>Code</span></span></div>
+      <div class="t3-tools"><span class="t3-search">${I.search}Search</span><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.filter}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.addProject}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.pen}</button></div>
       <ul class="t3-threads">${threads
         .map(
           (t, i) => `<li><button class="t3-row${t.working ? " working" : ""}" data-i="${i}">
@@ -197,19 +197,19 @@ export function mount(root: HTMLElement | null) {
         )
         .join("")}</ul>
       <div class="t3-shelf"><span>Settled (143)</span><i></i>${I.down}</div>
-      <div class="t3-foot"><button class="t3-icon" tabindex="-1">${I.gear}</button><button class="t3-icon" tabindex="-1">${I.prs}</button><button class="t3-icon" tabindex="-1">${I.usage}</button></div>
+      <div class="t3-foot"><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.gear}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.prs}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.usage}</button></div>
     </aside>
     <div class="t3-main">
       <div class="t3-tabs">${threads.map((t, i) => `<button class="t3-tab" data-i="${i}">${mono(t.project)}${t.project}</button>`).join("")}</div>
-      <header class="t3-head"><span class="crumb"></span><span class="t3-panels"><button class="t3-icon" tabindex="-1">${I.menu}</button><button class="t3-icon" tabindex="-1">${I.bottom}</button><button class="t3-icon" tabindex="-1">${I.side}</button></span></header>
+      <header class="t3-head"><span class="crumb"></span><span class="t3-panels"><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.menu}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.bottom}</button><button class="t3-icon" tabindex="-1" aria-hidden="true">${I.side}</button></span></header>
       <div class="t3-lane"><div class="t3-msgs"></div></div>
       <div class="t3-composer">
         <div class="t3-box">
           <span class="t3-ph">Ask anything, @tag files/folders, $use skills, or / for commands</span>
           <div class="t3-bar">
-            <span class="t3-left"><span class="chip">${claude}Claude Opus 5.5${I.down}</span><i class="sep"></i><span class="chip">${I.brain}High${I.down}</span><i class="sep"></i><span class="chip">${I.lock}Full access${I.down}</span><button class="t3-icon more" tabindex="-1">${I.more}</button></span>
+            <span class="t3-left"><span class="chip">${claude}Claude Opus 5.5${I.down}</span><i class="sep"></i><span class="chip">${I.brain}High${I.down}</span><i class="sep"></i><span class="chip">${I.lock}Full access${I.down}</span><button class="t3-icon more" tabindex="-1" aria-hidden="true">${I.more}</button></span>
             <span class="t3-right">
-              <button class="t3-icon clip" tabindex="-1">${I.clip}</button>
+              <button class="t3-icon clip" tabindex="-1" aria-hidden="true">${I.clip}</button>
               <span class="ctx-wrap"><button class="ctx" aria-pressed="false">${I.minimize}<span class="n"></span></button><span class="tip"></span><span class="yours-label">my change</span></span>
               <span class="send"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"/></svg></span>
             </span>

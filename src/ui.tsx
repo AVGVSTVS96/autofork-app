@@ -1,7 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { split, squash } from "../shared/api.ts"
 import * as client from "./client.ts"
 import facts from "./facts.json"
@@ -180,16 +180,20 @@ export const Ask = ({
   const type = (next: string) => {
     const cut = app ? null : next.match(CUT)
     if (cut && cut[1]!.trim()) chip(cut[1]!.trim(), cut[2]!)
-    else setText(next)
+    else setText(app && !text ? next.trimStart() : next)
   }
   const unchip = () => {
     const rest = text.trim().replace(BUT, "")
     const back = rest ? `${app}, but ${rest}` : app
     setApp("")
     setText(back)
-    requestAnimationFrame(() => input.current?.setSelectionRange(app.length, app.length))
+    requestAnimationFrame(() => {
+      input.current?.focus()
+      input.current?.setSelectionRange(app.length, app.length)
+    })
   }
   const registry = useContext(RegistryContext)
+  const entry = useId()
   const lead = (change: string) =>
     [found?.app, ...examples.map((one) => one.app)].find((name) => name && change.toLowerCase().startsWith(`${name.toLowerCase()} `))
   const asked = () => {
@@ -199,6 +203,13 @@ export const Ask = ({
     const name = lead(change)
     return name ? `${name}, but ${change.slice(name.length).trim().replace(BUT, "")}` : change
   }
+  const hint = live ? "" : app ? "but what you'd change" : fallback
+  useEffect(() => {
+    const field = input.current!
+    if (!initial || !matchMedia("(pointer: fine)").matches) return
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+  }, [])
   const prefetch = () => {
     const name = split(asked()).app
     if (!known(name)) registry.mount(client.resolve(name))()
@@ -211,10 +222,11 @@ export const Ask = ({
   }
   return (
     <form className="ask" id={id} onSubmit={submit}>
-      <label className="field slots">
+      <label className="field slots" htmlFor={entry}>
         {app ? <Chip app={app} onEdit={unchip} /> : null}
         <span className="entry">
           <textarea
+            id={entry}
             ref={input}
             rows={1}
             value={text}
@@ -242,13 +254,13 @@ export const Ask = ({
             onBlur={() => {
               resume.current = setTimeout(() => setIdle(true), 1400)
             }}
-            placeholder={live ? "" : app ? "but what you'd change" : fallback}
+            placeholder={hint}
             aria-label={app ? `What you'd change in ${app}` : label}
             autoComplete="off"
             spellCheck={false}
           />
           <span className="mirror" aria-hidden="true">
-            {text}
+            {text || hint}
             {guess ? <Pick guess={guess} onPick={() => chip(guess.app)} /> : null}{" "}
           </span>
         </span>
@@ -265,9 +277,22 @@ export const Ask = ({
 const Recognize = ({ app, onFound }: { app: string; onFound: (guess: Guess) => void }) => {
   const result = useAtomValue(client.resolve(app))
   const repo = AsyncResult.isSuccess(result) ? result.value.repo : undefined
-  const close = repo && (squash(repo.name).includes(squash(app)) || squash(app).includes(squash(repo.name)))
+  const name = repo ? squash(repo.name) : ""
+  const close = repo && ((name.includes(squash(app)) && squash(app).length >= name.length * 0.6) || squash(app).includes(name))
   useEffect(() => {
-    if (repo && close) onFound({ app, name: repo.name, avatar: repo.avatar })
+    if (!repo || !close) return
+    let on = true
+    const shown = () => {
+      if (on) onFound({ app, name: repo.name, avatar: repo.avatar })
+    }
+    if (repo.avatar) {
+      const icon = new Image()
+      icon.src = repo.avatar
+      void icon.decode().then(shown, shown)
+    } else shown()
+    return () => {
+      on = false
+    }
   }, [repo, close, app])
   return null
 }
@@ -304,6 +329,16 @@ const Badge = ({ name, avatar, onEdit }: { name: string; avatar: string | undefi
     {name}
   </button>
 )
+
+export const useTitle = (title: string | undefined) =>
+  useEffect(() => {
+    if (!title) return
+    const before = document.title
+    document.title = title
+    return () => {
+      document.title = before
+    }
+  }, [title])
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

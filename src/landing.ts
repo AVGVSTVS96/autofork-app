@@ -73,6 +73,7 @@ const graph = (page: HTMLElement) => {
       later(dot("rr", x, y, 7), y)
       const tag = document.createElement("span")
       tag.className = `graph-tag ${side}`
+      tag.ariaHidden = "true"
       tag.textContent = versions[i]!
       page.append(tag)
       const left = side === "left" ? x - 14 : x + 14
@@ -103,7 +104,7 @@ const graph = (page: HTMLElement) => {
       dot("head", Y, head, 8)
 
       let above: Element = page.querySelector(".hero")!
-      ;[...page.querySelectorAll(".page > section")].forEach((section, i) => {
+      ;[...page.querySelectorAll(".home > section")].forEach((section, i) => {
         const top = at(above).y + at(above).h + 18
         const node = at(section.firstElementChild!).y - 22
         above = section
@@ -129,7 +130,7 @@ const graph = (page: HTMLElement) => {
     const ask = one(".hero .ask"), hero = one(".hero")
     const top = one("nav").y + one("nav").h + 6
     const end = one("footer").y - 20
-    const nodes = [...page.querySelectorAll(".page > section")].map((section) => ({ x: at(section.firstElementChild!).x, y: mid(section.querySelector("[data-node]")!).y }))
+    const nodes = [...page.querySelectorAll(".home > section")].map((section) => ({ x: at(section.firstElementChild!).x, y: mid(section.querySelector("[data-node]")!).y }))
 
     const first = Math.max(top + 44, fork.y - 100)
     const rels = [...(fork.y - first >= 48 ? [first] : []), hero.y + hero.h + 70]
@@ -370,7 +371,7 @@ const lineage = (root: HTMLElement) => {
       c.style.setProperty("--r", `${c.getAttribute("r")}px`)
       c.style.setProperty("--d", wide ? `${300 + i * 140}ms` : "0ms")
     })
-    cards.forEach((c, i) => c.style.setProperty("--d", wide ? `${900 + i * 220}ms` : "0ms"))
+    cards.forEach((c, i) => c.style.setProperty("--d", wide ? `${500 + i * 160}ms` : "0ms"))
     if (wide && seen) root.classList.add("in")
     reveal()
   }

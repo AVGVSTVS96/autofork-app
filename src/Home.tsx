@@ -9,7 +9,7 @@ import facts from "./facts.json"
 import { start } from "./landing.ts"
 import { History, Meant, MineToday, Yours } from "./Sections.tsx"
 import { known, type Found } from "./known.ts"
-import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, type Example } from "./ui.tsx"
+import { Ask, ClaudeIcon, Footer, GitHubIcon, Nav, OpenAIIcon, stars, useTitle, type Example } from "./ui.tsx"
 
 const EXAMPLES: ReadonlyArray<Example> = examples.examples.map(({ app, change }) => ({ app, change, avatar: known(app)!.repo.avatar }))
 
@@ -44,38 +44,40 @@ const Landing = () => {
         <a href="#self">Run it yourself</a>
         <a href={facts.repo}>GitHub</a>
       </Nav>
-      <header className="hero">
-        <Headline />
-        <p className="sub">Personal forks of open-source apps that update themselves.</p>
-        <Ask
-          id="ask"
-          onSubmit={(text, via) => ask(text, isAgent(via) ? via : undefined)}
-          examples={EXAMPLES}
-          label="An open source app and what you'd change"
-          action="Fork it"
-        />
-        <div className="signin">
-          <button type="submit" form="ask" value="chatgpt" className="btn">
-            <OpenAIIcon />
-            <span>
-              <span className="via">Continue with </span>
-              ChatGPT
-            </span>
-          </button>
-          <button type="submit" form="ask" value="claude" className="btn">
-            <ClaudeIcon />
-            <span>
-              <span className="via">Continue with </span>
-              Claude
-            </span>
-          </button>
-        </div>
-        <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
-      </header>
-      <Meant />
-      <MineToday />
-      <Yours />
-      <History />
+      <main className="home">
+        <header className="hero">
+          <Headline />
+          <p className="sub">Personal forks of open-source apps that update themselves.</p>
+          <Ask
+            id="ask"
+            onSubmit={(text, via) => ask(text, isAgent(via) ? via : undefined)}
+            examples={EXAMPLES}
+            label="An open source app and what you'd change"
+            action="Fork it"
+          />
+          <div className="signin">
+            <button type="submit" form="ask" value="chatgpt" className="btn">
+              <OpenAIIcon />
+              <span>
+                <span className="via">Continue with </span>
+                ChatGPT
+              </span>
+            </button>
+            <button type="submit" form="ask" value="claude" className="btn">
+              <ClaudeIcon />
+              <span>
+                <span className="via">Continue with </span>
+                Claude
+              </span>
+            </button>
+          </div>
+          <p className="note">Runs on the ChatGPT or Claude plan you already pay for.</p>
+        </header>
+        <Meant />
+        <MineToday />
+        <Yours />
+        <History />
+      </main>
       <Footer />
     </div>
   )
@@ -83,6 +85,8 @@ const Landing = () => {
 
 const Start = ({ q, agent, error }: { q: string; agent: Agent | undefined; error: string | undefined }) => {
   const ask = useAsk()
+  const { app } = split(q)
+  useTitle(app ? `${app} · autofork` : undefined)
   return (
     <div className="page bare">
       <Nav />
@@ -414,7 +418,12 @@ const ChatGPT = ({ owner, name, change }: { owner: string; name: string; change:
       <button
         type="button"
         className="code"
-        onClick={() => void navigator.clipboard.writeText(device.code).then(() => setCopied(true))}
+        onClick={() =>
+          void navigator.clipboard.writeText(device.code).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1400)
+          })
+        }
         title="Copy"
       >
         {device.code}
