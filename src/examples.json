@@ -1,5 +1,5 @@
 {
-  "refreshed": "2026-10-13",
+  "refreshed": "2026-10-17",
   "examples": [
     { "app": "T3 Code", "repo": "pingdotgg/t3code", "change": "always show context usage" },
     { "app": "expo-gpt-live", "repo": "davidmokos/expo-gpt-live", "change": "call my own assistant instead" },
@@ -7,7 +7,7 @@
     { "app": "Ghostty", "repo": "ghostty-org/ghostty", "change": "keep scrollback after a restart", "issue": 1847 },
     { "app": "Buzz", "repo": "block/buzz", "change": "let my agents share files with me" },
     { "app": "pi", "repo": "earendil-works/pi", "change": "compact long chats with a cheaper model", "issue": 7553 },
-    { "app": "cmux", "repo": "manaflow-ai/cmux", "change": "ping my phone when an agent needs me", "issue": 9895 },
+    { "app": "cmux", "repo": "manaflow-ai/cmux", "change": "add a global hotkey dropdown terminal", "issue": 2411 },
     { "app": "tmux", "repo": "tmux/tmux", "change": "upgrade without losing my panes", "issue": 5693 },
     { "app": "UTM", "repo": "utmapp/UTM", "change": "pass Cmd-Q and Cmd-W through to the VM", "issue": 5513 }
   ]
