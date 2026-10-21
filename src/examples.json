@@ -1,10 +1,10 @@
 {
-  "refreshed": "2026-10-17",
+  "refreshed": "2026-10-21",
   "examples": [
     { "app": "T3 Code", "repo": "pingdotgg/t3code", "change": "always show context usage" },
     { "app": "expo-gpt-live", "repo": "davidmokos/expo-gpt-live", "change": "call my own assistant instead" },
     { "app": "herdr", "repo": "herdrdev/herdr", "change": "show each pane's ID on its border" },
-    { "app": "Ghostty", "repo": "ghostty-org/ghostty", "change": "keep scrollback after a restart", "issue": 1847 },
+    { "app": "Ghostty", "repo": "ghostty-org/ghostty", "change": "support tmux control mode", "issue": 1935 },
     { "app": "Buzz", "repo": "block/buzz", "change": "let my agents share files with me" },
     { "app": "pi", "repo": "earendil-works/pi", "change": "compact long chats with a cheaper model", "issue": 7553 },
     { "app": "cmux", "repo": "manaflow-ai/cmux", "change": "add a global hotkey dropdown terminal", "issue": 2411 },
