@@ -1,5 +1,5 @@
 {
-  "refreshed": "2026-10-21",
+  "refreshed": "2026-10-25",
   "examples": [
     { "app": "T3 Code", "repo": "pingdotgg/t3code", "change": "always show context usage" },
     { "app": "expo-gpt-live", "repo": "davidmokos/expo-gpt-live", "change": "call my own assistant instead" },

@@ -4,7 +4,7 @@
       "owner": "pingdotgg",
       "name": "t3code",
       "description": null,
-      "stars": 29098,
+      "stars": 30032,
       "avatar": "/repos/t3code.png"
     },
     "others": []
@@ -14,7 +14,7 @@
       "owner": "davidmokos",
       "name": "expo-gpt-live",
       "description": "Expo SDK 57 voice app with GPT-Live 1 and AI Elements Persona.",
-      "stars": 138,
+      "stars": 137,
       "avatar": "/repos/expo-gpt-live.jpg"
     },
     "others": []
@@ -24,7 +24,7 @@
       "owner": "herdrdev",
       "name": "herdr",
       "description": "the runtime your coding agents live on",
-      "stars": 45168,
+      "stars": 45820,
       "avatar": "/repos/herdr.svg"
     },
     "others": []
@@ -34,7 +34,7 @@
       "owner": "ghostty-org",
       "name": "ghostty",
       "description": "👻 Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.",
-      "stars": 62478,
+      "stars": 62587,
       "avatar": "/repos/ghostty.png"
     },
     "others": []
@@ -44,7 +44,7 @@
       "owner": "block",
       "name": "buzz",
       "description": "A hive mind communication platform",
-      "stars": 36220,
+      "stars": 36447,
       "avatar": "/repos/buzz.jpg"
     },
     "others": []
@@ -54,7 +54,7 @@
       "owner": "earendil-works",
       "name": "pi",
       "description": "AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI",
-      "stars": 116936,
+      "stars": 117760,
       "avatar": "/repos/pi.png"
     },
     "others": []
@@ -64,7 +64,7 @@
       "owner": "manaflow-ai",
       "name": "cmux",
       "description": "Open source Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents. Built for multitasking, organization, and programmability.",
-      "stars": 28330,
+      "stars": 28449,
       "avatar": "/repos/cmux.png"
     },
     "others": []
@@ -74,7 +74,7 @@
       "owner": "tmux",
       "name": "tmux",
       "description": "tmux source code",
-      "stars": 49961,
+      "stars": 49994,
       "avatar": "/repos/tmux.png"
     },
     "others": []
@@ -84,7 +84,7 @@
       "owner": "utmapp",
       "name": "UTM",
       "description": "Virtual machines for iOS and macOS",
-      "stars": 36299,
+      "stars": 36529,
       "avatar": "/repos/utm.png"
     },
     "others": []
