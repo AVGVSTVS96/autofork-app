@@ -8,26 +8,28 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 
 type Jwk = JsonWebKey & { kid: string }
 
-let keys: Promise<Jwk[]> | undefined
+let keys: Jwk[] = []
+let fetching: Promise<unknown> | undefined
+let fetched = 0
 const fetchKeys = () =>
-  (keys = fetch(`${ISSUER}/.well-known/jwks`, { signal: AbortSignal.timeout(10_000) })
-    .then((response) => {
-      if (!response.ok) throw new Error(`GitHub's signing keys answered ${response.status}`)
-      return response.json() as Promise<{ keys: Jwk[] }>
+  (fetching ??= fetch(`${ISSUER}/.well-known/jwks`, { signal: AbortSignal.timeout(10_000) })
+    .then(async (response) => {
+      const body = response.ok ? ((await response.json()) as { keys?: unknown }) : undefined
+      if (!Array.isArray(body?.keys)) throw new Error(`GitHub's signing keys answered ${response.status}`)
+      keys = body.keys as Jwk[]
     })
-    .then(({ keys }) => keys)
-    .catch((error) => {
-      keys = undefined
-      throw error
-    }))
+    .finally(() => (fetching = undefined)))
 
-/* GitHub rotates its signing keys, so an unknown kid fetches them again. Requests that miss together share one fetch */
+/* GitHub rotates its signing keys, so a kid it hasn't seen fetches them again, at most once a minute, keeping the last ones meanwhile */
 const signingKey = (kid: string) =>
   Effect.tryPromise({
     try: async () => {
-      const known = keys ?? fetchKeys()
-      const find = (list: Jwk[]) => list.find((key) => key.kid === kid)
-      return find(await known) ?? find(await (keys === known ? fetchKeys() : (keys ?? fetchKeys())))
+      const find = () => keys.find((key) => key.kid === kid)
+      if (find()) return find()
+      if (!fetching && keys.length && Date.now() - fetched < 60_000) return undefined
+      if (!fetching) fetched = Date.now()
+      await fetchKeys()
+      return find()
     },
     catch: (error) => new GitHub.GitHubError({ status: 0, path: "/.well-known/jwks", message: String(error) }),
   })
@@ -75,8 +77,22 @@ const verify = (jwt: string) =>
     return claims
   })
 
-const retryHiccups = <A, R>(effect: Effect.Effect<A, GitHub.GitHubError, R>) =>
-  Effect.retry(effect, { while: GitHub.hiccup, schedule: Schedule.exponential("1 second"), times: 3 })
+/* Retries GitHub's hiccups for up to 8 seconds, so the 503 gets back before the function times out. What GitHub refuses becomes the caller's refusal */
+const fromGitHub =
+  (refusal: (error: GitHub.GitHubError) => string) =>
+  <A, R>(effect: Effect.Effect<A, GitHub.GitHubError, R>) =>
+    effect.pipe(
+      Effect.retry({ while: GitHub.hiccup, schedule: Schedule.exponential("1 second"), times: 3 }),
+      Effect.timeoutOrElse({
+        duration: "8 seconds",
+        orElse: () => Effect.fail(new GitHub.GitHubError({ status: 0, path: "", message: "GitHub took too long" })),
+      }),
+      Effect.tapError((error) => (GitHub.hiccup(error) || GitHub.missing(error) ? Effect.void : Effect.logWarning(error))),
+      Effect.mapError((error) => (GitHub.hiccup(error) ? error : new Problem({ message: refusal(error) }))),
+    )
+
+const notInstalled = (repository: string) => (error: GitHub.GitHubError) =>
+  GitHub.missing(error) ? `the autofork app isn't installed on ${repository}` : `GitHub refused the autofork app on ${repository}`
 
 const CodexAuth = Schema.Struct({ tokens: Schema.Struct({ refresh_token: Schema.String }) })
 
@@ -89,7 +105,7 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
     const [owner = "", name = ""] = claims.repository.split("/")
     yield* GitHub.repoToken(owner, name).pipe(
       Effect.flatMap((token) => GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)),
-      retryHiccups,
+      fromGitHub(notInstalled(claims.repository)),
     )
   })
 
@@ -97,16 +113,6 @@ export const pushToken = (authorization: string | undefined) =>
   Effect.gen(function* () {
     const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
     const [owner = "", name = ""] = claims.repository.split("/")
-    const { token, expires_at } = yield* GitHub.pushToken(owner, name).pipe(
-      retryHiccups,
-      Effect.tapError((error) => (GitHub.hiccup(error) || GitHub.missing(error) ? Effect.void : Effect.logWarning(error))),
-      Effect.mapError((error) =>
-        GitHub.hiccup(error)
-          ? error
-          : new Problem({
-              message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : `GitHub refused the autofork app a token for ${claims.repository}`,
-            }),
-      ),
-    )
+    const { token, expires_at } = yield* GitHub.pushToken(owner, name).pipe(fromGitHub(notInstalled(claims.repository)))
     return { token, expires_at }
   })

@@ -139,12 +139,13 @@ const callback = HttpRouter.add("GET", "/api/github/callback", (request) =>
   }),
 )
 
-/* A GitHub hiccup is a 503, so the workflow knows to try again. Anything else is a refusal */
+/* A refusal is a 403. Anything else, like a GitHub hiccup, is a logged 503, so the workflow knows to try again */
 const refused = Effect.catchCause((cause) => {
   const error = Cause.squash(cause)
-  if (error instanceof GitHub.GitHubError && GitHub.hiccup(error))
-    return Effect.logWarning(error).pipe(Effect.as(HttpServerResponse.jsonUnsafe({ error: "GitHub didn't answer, try again" }, { status: 503 })))
-  return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "not allowed" }, { status: 403 }))
+  if (error instanceof Problem) return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.message }, { status: 403 }))
+  return (Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logWarning(cause)).pipe(
+    Effect.as(HttpServerResponse.jsonUnsafe({ error: "something went wrong, try again" }, { status: 503 })),
+  )
 })
 
 const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>
