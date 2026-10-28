@@ -44,7 +44,7 @@ const verify = (jwt: string) =>
     if (claims.exp * 1000 < Date.now()) return yield* new Problem({ message: "expired" })
     if (claims.event_name.startsWith("pull_request")) return yield* new Problem({ message: "not from pull requests" })
     if (!claims.workflow_ref.startsWith(`${claims.repository}/.github/workflows/autofork.yml@`)) {
-      return yield* new Problem({ message: "only the autofork workflow can save a sign-in" })
+      return yield* new Problem({ message: "only the autofork workflow can ask" })
     }
     return claims
   })
@@ -66,4 +66,16 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
         times: 3,
       }),
     )
+  })
+
+export const pushToken = (authorization: string | undefined) =>
+  Effect.gen(function* () {
+    const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
+    const [owner = "", name = ""] = claims.repository.split("/")
+    const { token, expires_at } = yield* GitHub.pushToken(owner, name).pipe(
+      Effect.mapError((error) =>
+        new Problem({ message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : `GitHub had a problem: ${error.message}` }),
+      ),
+    )
+    return { token, expires_at }
   })

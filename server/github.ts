@@ -128,6 +128,17 @@ export const repoToken = (owner: string, name: string) =>
     }),
   )
 
+/* A workflow's GITHUB_TOKEN can't push changes to workflow files, so a sync that brings upstream's asks for this one */
+export const pushToken = (owner: string, name: string) =>
+  Effect.gen(function* () {
+    const jwt = yield* appJwt
+    const installation = yield* request<{ id: number }>(jwt, "GET", `/repos/${owner}/${name}/installation`)
+    return yield* request<{ token: string; expires_at: string }>(jwt, "POST", `/app/installations/${installation.id}/access_tokens`, {
+      repositories: [name],
+      permissions: { contents: "write", workflows: "write", actions: "write" },
+    })
+  })
+
 type OAuthTokens = {
   access_token?: string
   refresh_token?: string
