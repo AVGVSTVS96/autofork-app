@@ -9,10 +9,18 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 type Jwk = JsonWebKey & { kid: string }
 
 let keys: Promise<Jwk[]> | undefined
-const jwks = () =>
-  (keys ??= fetch(`${ISSUER}/.well-known/jwks`)
-    .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
-    .then(({ keys }) => keys))
+let fetched = 0
+/* GitHub rotates its signing keys, so an unknown kid fetches them again, at most once a minute */
+const jwks = (kid?: string) =>
+  Effect.promise(async () => {
+    const known = await keys?.catch(() => undefined)
+    if (known?.some((key) => key.kid === kid) || (known && Date.now() - fetched < 60_000)) return known
+    fetched = Date.now()
+    keys = fetch(`${ISSUER}/.well-known/jwks`)
+      .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
+      .then(({ keys }) => keys)
+    return keys
+  })
 
 const Claims = Schema.Struct({
   iss: Schema.Literal(ISSUER),
@@ -29,7 +37,7 @@ const verify = (jwt: string) =>
   Effect.gen(function* () {
     const [head = "", body = "", signature = ""] = jwt.split(".")
     const { kid } = decode(head) as { kid?: string }
-    const jwk = (yield* Effect.promise(jwks)).find((key) => key.kid === kid)
+    const jwk = (yield* jwks(kid)).find((key) => key.kid === kid)
     if (!jwk) return yield* new Problem({ message: "unknown signing key" })
     const valid = yield* Effect.promise(async () =>
       crypto.subtle.verify(
@@ -49,6 +57,11 @@ const verify = (jwt: string) =>
     return claims
   })
 
+const hiccup = (error: GitHub.GitHubError) => error.status === 0 || error.status >= 500 || GitHub.busy(error)
+
+const retryHiccups = <A, R>(effect: Effect.Effect<A, GitHub.GitHubError, R>) =>
+  Effect.retry(effect, { while: hiccup, schedule: Schedule.exponential("1 second"), times: 3 })
+
 const CodexAuth = Schema.Struct({ tokens: Schema.Struct({ refresh_token: Schema.String }) })
 
 export const saveCodexAuth = (authorization: string | undefined, body: string) =>
@@ -60,11 +73,7 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
     const [owner = "", name = ""] = claims.repository.split("/")
     yield* GitHub.repoToken(owner, name).pipe(
       Effect.flatMap((token) => GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)),
-      Effect.retry({
-        while: (error) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
-        schedule: Schedule.exponential("1 second"),
-        times: 3,
-      }),
+      retryHiccups,
     )
   })
 
@@ -73,9 +82,8 @@ export const pushToken = (authorization: string | undefined) =>
     const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
     const [owner = "", name = ""] = claims.repository.split("/")
     const { token, expires_at } = yield* GitHub.pushToken(owner, name).pipe(
-      Effect.mapError((error) =>
-        new Problem({ message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : `GitHub had a problem: ${error.message}` }),
-      ),
+      retryHiccups,
+      Effect.mapError((error) => (hiccup(error) ? error : new Problem({ message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : error.message }))),
     )
     return { token, expires_at }
   })
