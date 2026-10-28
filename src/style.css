@@ -534,7 +534,7 @@ h2 { margin: 0; font-size: clamp(34px, 4.4vw, 60px); line-height: 1.02; letter-s
 
 footer { display: flex; align-items: center; justify-content: space-between; margin-left: calc(-1 * var(--rail)); max-width: none; margin-top: clamp(96px, 14vh, 160px); padding: 28px 0 40px; border-top: 1px solid var(--hair); font-size: 15px; color: var(--ink-2); position: relative; z-index: 1; background: var(--bg); }
 footer .brand { height: 26px; }
-footer .links { display: flex; gap: 22px; }
+footer .links { display: flex; align-items: center; gap: 22px; }
 
 @media (max-width: 1100px) {
   .story { grid-template-columns: minmax(0, 1fr); }
