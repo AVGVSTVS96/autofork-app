@@ -9,17 +9,27 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 type Jwk = JsonWebKey & { kid: string }
 
 let keys: Promise<Jwk[]> | undefined
-let fetched = 0
-/* GitHub rotates its signing keys, so an unknown kid fetches them again, at most once a minute */
-const jwks = (kid?: string) =>
-  Effect.promise(async () => {
-    const known = await keys?.catch(() => undefined)
-    if (known?.some((key) => key.kid === kid) || (known && Date.now() - fetched < 60_000)) return known
-    fetched = Date.now()
-    keys = fetch(`${ISSUER}/.well-known/jwks`)
-      .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
-      .then(({ keys }) => keys)
-    return keys
+const fetchKeys = () =>
+  (keys = fetch(`${ISSUER}/.well-known/jwks`, { signal: AbortSignal.timeout(10_000) })
+    .then((response) => {
+      if (!response.ok) throw new Error(`GitHub's signing keys answered ${response.status}`)
+      return response.json() as Promise<{ keys: Jwk[] }>
+    })
+    .then(({ keys }) => keys)
+    .catch((error) => {
+      keys = undefined
+      throw error
+    }))
+
+/* GitHub rotates its signing keys, so an unknown kid fetches them again. Requests that miss together share one fetch */
+const signingKey = (kid: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const known = keys ?? fetchKeys()
+      const find = (list: Jwk[]) => list.find((key) => key.kid === kid)
+      return find(await known) ?? find(await (keys === known ? fetchKeys() : (keys ?? fetchKeys())))
+    },
+    catch: (error) => new GitHub.GitHubError({ status: 0, path: "/.well-known/jwks", message: String(error) }),
   })
 
 const Claims = Schema.Struct({
@@ -31,13 +41,21 @@ const Claims = Schema.Struct({
   workflow_ref: Schema.String,
 })
 
-const decode = (part: string) => JSON.parse(Buffer.from(part, "base64url").toString()) as Record<string, unknown>
+const decode = (part: string): unknown => {
+  try {
+    return JSON.parse(Buffer.from(part, "base64url").toString())
+  } catch {
+    return undefined
+  }
+}
 
 const verify = (jwt: string) =>
   Effect.gen(function* () {
-    const [head = "", body = "", signature = ""] = jwt.split(".")
-    const { kid } = decode(head) as { kid?: string }
-    const jwk = (yield* jwks(kid)).find((key) => key.kid === kid)
+    const parts = jwt.split(".")
+    const [head = "", body = "", signature = ""] = parts
+    const kid = (decode(head) as { kid?: unknown } | null | undefined)?.kid
+    if (parts.length !== 3 || typeof kid !== "string") return yield* new Problem({ message: "bad token" })
+    const jwk = yield* signingKey(kid)
     if (!jwk) return yield* new Problem({ message: "unknown signing key" })
     const valid = yield* Effect.promise(async () =>
       crypto.subtle.verify(
@@ -57,10 +75,8 @@ const verify = (jwt: string) =>
     return claims
   })
 
-const hiccup = (error: GitHub.GitHubError) => error.status === 0 || error.status >= 500 || GitHub.busy(error)
-
 const retryHiccups = <A, R>(effect: Effect.Effect<A, GitHub.GitHubError, R>) =>
-  Effect.retry(effect, { while: hiccup, schedule: Schedule.exponential("1 second"), times: 3 })
+  Effect.retry(effect, { while: GitHub.hiccup, schedule: Schedule.exponential("1 second"), times: 3 })
 
 const CodexAuth = Schema.Struct({ tokens: Schema.Struct({ refresh_token: Schema.String }) })
 
@@ -83,7 +99,14 @@ export const pushToken = (authorization: string | undefined) =>
     const [owner = "", name = ""] = claims.repository.split("/")
     const { token, expires_at } = yield* GitHub.pushToken(owner, name).pipe(
       retryHiccups,
-      Effect.mapError((error) => (hiccup(error) ? error : new Problem({ message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : error.message }))),
+      Effect.tapError((error) => (GitHub.hiccup(error) || GitHub.missing(error) ? Effect.void : Effect.logWarning(error))),
+      Effect.mapError((error) =>
+        GitHub.hiccup(error)
+          ? error
+          : new Problem({
+              message: GitHub.missing(error) ? `the autofork app isn't installed on ${claims.repository}` : `GitHub refused the autofork app a token for ${claims.repository}`,
+            }),
+      ),
     )
     return { token, expires_at }
   })

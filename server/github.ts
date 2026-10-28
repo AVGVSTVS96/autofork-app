@@ -85,6 +85,8 @@ export const busy = (error: GitHubError) => error.status === 429
 
 export const missing = (error: GitHubError) => error.status === 404
 
+export const hiccup = (error: GitHubError) => transient(error) || busy(error)
+
 const appJwt = Effect.gen(function* () {
   const { clientId, privateKey } = yield* Env
   const now = Math.floor(Date.now() / 1000)
