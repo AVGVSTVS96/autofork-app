@@ -44,8 +44,47 @@ export type ForkState = typeof ForkState.Type
 
 export const Started = Schema.Struct({ owner: Schema.String, name: Schema.String })
 
-export const MyFork = Schema.Struct({ owner: Schema.String, name: Schema.String, upstream: Schema.NullOr(Schema.String) })
+/* The schedule presets `autofork --every` writes and the dashboard offers; any other line shows as custom */
+export const EVERY = { "5m": "*/5 * * * *", "15m": "*/15 * * * *", "1h": "17 * * * *", "1d": "17 6 * * *" } as const
+
+export const Limits = Schema.Struct({ heals: Schema.Number, month: Schema.Number, heal: Schema.Number })
+export type Limits = typeof Limits.Type
+export const LIMITS: Limits = { heals: 10, month: 200, heal: 20 }
+
+export const MyFork = Schema.Struct({
+  owner: Schema.String,
+  name: Schema.String,
+  upstream: Schema.NullOr(Schema.String),
+  linked: Schema.Boolean,
+  cron: Schema.NullOr(Schema.String),
+  heals: Schema.Number,
+  spent: Schema.Number,
+})
 export type MyFork = typeof MyFork.Type
+
+export const Linked = Schema.Struct({ linked: Schema.Boolean, cron: Schema.NullOr(Schema.String) })
+
+export const Heal = Schema.Struct({
+  id: Schema.Number,
+  patch: Schema.String,
+  agent: Schema.String,
+  model: Schema.NullOr(Schema.String),
+  cap: Schema.Number,
+  cost: Schema.Number,
+  status: Schema.Literals(["running", "done", "stopped"]),
+  startedAt: Schema.String,
+  runUrl: Schema.NullOr(Schema.String),
+})
+export type Heal = typeof Heal.Type
+
+export const Settings = Schema.Struct({
+  linked: Schema.Boolean,
+  cron: Schema.NullOr(Schema.String),
+  limits: Limits,
+  month: Schema.Struct({ heals: Schema.Number, spent: Schema.Number }),
+  heals: Schema.Array(Heal),
+})
+export type Settings = typeof Settings.Type
 
 export const DeviceCode = Schema.Struct({ code: Schema.String, url: Schema.String })
 
@@ -121,6 +160,14 @@ export const AppGroup = HttpApiGroup.make("app")
     }),
     HttpApiEndpoint.get("fork", "/api/forks/:owner/:name", { params: fork, success: Fork, error: Problem }),
     HttpApiEndpoint.get("yours", "/api/forks/:owner/:name/yours", { params: fork, success: Schema.Boolean }),
+    HttpApiEndpoint.post("link", "/api/link", { payload: Schema.Struct(fork), success: Linked, error: Problem }),
+    HttpApiEndpoint.get("settings", "/api/forks/:owner/:name/settings", { params: fork, success: Settings, error: [Problem, SignedOut] }),
+    HttpApiEndpoint.put("saveSettings", "/api/forks/:owner/:name/settings", {
+      params: fork,
+      payload: Schema.Struct({ cron: Schema.String, limits: Limits }),
+      success: Settings,
+      error: [Problem, SignedOut],
+    }),
     HttpApiEndpoint.post("addChange", "/api/forks/:owner/:name/changes", {
       params: fork,
       payload: Schema.Struct({ change: Schema.String }),

@@ -13,7 +13,7 @@ import * as Env from "./env.ts"
 import * as Forks from "./forks.ts"
 import * as GitHub from "./github.ts"
 import * as Icon from "./icon.ts"
-import { saveCodexAuth } from "./oidc.ts"
+import { pushToken, saveCodexAuth } from "./oidc.ts"
 import * as Session from "./session.ts"
 
 const friendly = (error: GitHub.GitHubError) =>
@@ -139,16 +139,27 @@ const callback = HttpRouter.add("GET", "/api/github/callback", (request) =>
   }),
 )
 
+/* A refusal is a 403. Anything else, like a GitHub hiccup, is a logged 503, so the workflow knows to try again */
+const refused = Effect.catchCause((cause) => {
+  const error = Cause.squash(cause)
+  if (error instanceof Problem) return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.message }, { status: 403 }))
+  return (Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.logWarning(cause)).pipe(
+    Effect.as(HttpServerResponse.jsonUnsafe({ error: "something went wrong, try again" }, { status: 503 })),
+  )
+})
+
 const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>
   Effect.gen(function* () {
     const body = yield* request.text
     yield* saveCodexAuth(request.headers.authorization, body)
     return HttpServerResponse.empty({ status: 204 })
-  }).pipe(
-    Effect.catchCause((cause) => {
-      const error = Cause.squash(cause)
-      return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "not allowed" }, { status: 403 }))
-    }),
+  }).pipe(refused),
+)
+
+const workflowToken = HttpRouter.add("POST", "/api/github/token", (request) =>
+  pushToken(request.headers.authorization).pipe(
+    Effect.map((token) => HttpServerResponse.jsonUnsafe(token, { headers: { "cache-control": "no-store" } })),
+    refused,
   ),
 )
 
@@ -189,7 +200,7 @@ const icon = HttpRouter.add("GET", "/api/icon/:owner/:name", (request) =>
   }),
 )
 
-const Routes = Layer.mergeAll(signIn, callback, codexAuth, icon, clientLog)
+const Routes = Layer.mergeAll(signIn, callback, codexAuth, workflowToken, icon, clientLog)
 
 export const app = HttpRouter.toWebHandler(
   Layer.mergeAll(HttpApiBuilder.layer(Api).pipe(Layer.provide(AppLive)), Routes).pipe(
