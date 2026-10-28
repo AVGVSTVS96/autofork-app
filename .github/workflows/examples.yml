@@ -50,3 +50,7 @@ jobs:
             echo "::warning::main moved while this ran, so tomorrow's run refreshes again"
           fi
           git push --quiet "$remote" --delete "$scratch"
+
+      - name: Capture Claude accounting
+        if: always()
+        uses: AVGVSTVS96/autofork/.github/actions/usage@bf88ce65d7096d600ebe31ea4e607260ba1b9826
