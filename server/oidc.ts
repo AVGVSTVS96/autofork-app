@@ -14,8 +14,14 @@ const jwks = (fresh = false) => {
   if (!keys || (fresh && Date.now() - fetched > 60_000)) {
     fetched = Date.now()
     keys = fetch(`${ISSUER}/.well-known/jwks`)
-      .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
-      .then(({ keys }) => keys)
+      .then((response) => {
+        if (!response.ok) throw new Error(`GitHub's signing keys answered ${response.status}`)
+        return response.json() as Promise<{ keys?: Jwk[] }>
+      })
+      .then(({ keys }) => {
+        if (!Array.isArray(keys)) throw new Error("GitHub's signing keys came back without keys")
+        return keys
+      })
       .catch((error) => {
         keys = undefined
         throw error

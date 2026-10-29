@@ -292,7 +292,10 @@ const inheritedWorkflows = (token: GitHub.Token, repo: GitHubRepo, branch: strin
     return (yield* listDir(token, repo.owner.login, repo.name, ".github/workflows"))
       .filter((entry) => entry.name !== "autofork.yml" && theirs.has(`${entry.name} ${entry.sha}`))
       .map((entry): GitHub.File => ({ path: `.github/workflows/${entry.name}`, content: null }))
-  }).pipe(Effect.orElseSucceed((): GitHub.File[] => []))
+  }).pipe(
+    Effect.retry({ schedule: Schedule.exponential("1 second"), times: 2 }),
+    Effect.orElseSucceed((): GitHub.File[] => []),
+  )
 
 type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
 
