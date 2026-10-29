@@ -9,10 +9,17 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 type Jwk = JsonWebKey & { kid: string }
 
 let keys: Promise<Jwk[]> | undefined
-const jwks = () =>
-  (keys ??= fetch(`${ISSUER}/.well-known/jwks`)
-    .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
-    .then(({ keys }) => keys))
+const jwks = (fresh = false) => {
+  if (fresh || !keys)
+    keys = fetch(`${ISSUER}/.well-known/jwks`)
+      .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
+      .then(({ keys }) => keys)
+      .catch((error) => {
+        keys = undefined
+        throw error
+      })
+  return keys
+}
 
 const Claims = Schema.Struct({
   iss: Schema.Literal(ISSUER),
@@ -29,7 +36,8 @@ const verify = (jwt: string) =>
   Effect.gen(function* () {
     const [head = "", body = "", signature = ""] = jwt.split(".")
     const { kid } = decode(head) as { kid?: string }
-    const jwk = (yield* Effect.promise(jwks)).find((key) => key.kid === kid)
+    const find = (fresh: boolean) => Effect.promise(() => jwks(fresh)).pipe(Effect.map((all) => all.find((key) => key.kid === kid)))
+    const jwk = (yield* find(false)) ?? (yield* find(true))
     if (!jwk) return yield* new Problem({ message: "unknown signing key" })
     const valid = yield* Effect.promise(async () =>
       crypto.subtle.verify(

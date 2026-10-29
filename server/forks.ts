@@ -17,7 +17,7 @@ type GitHubRepo = {
   created_at: string
   fork: boolean
   private: boolean
-  parent?: { full_name: string; description: string | null }
+  parent?: { full_name: string; description: string | null; default_branch: string }
   permissions?: { admin: boolean; push: boolean }
 }
 
@@ -326,8 +326,17 @@ export const start = (user: User, owner: string, name: string, change: string, a
         )
         if (repo.parent) {
           const [parentOwner = "", parentName = ""] = repo.parent.full_name.split("/")
-          const theirs = new Set((yield* listDir(user.token, parentOwner, parentName, ".github/workflows")).map((entry) => `${entry.name} ${entry.sha}`))
-          const inherited = (yield* listDir(user.token, owner, name, ".github/workflows")).filter((entry) => theirs.has(`${entry.name} ${entry.sha}`))
+          const { merge_base_commit } = yield* GitHub.request<{ merge_base_commit: { sha: string } }>(
+            user.token,
+            "GET",
+            `/repos/${owner}/${name}/compare/${parentOwner}:${repo.parent.default_branch}...${branch}`,
+          )
+          const theirs = new Set(
+            (yield* listDir(user.token, parentOwner, parentName, `.github/workflows?ref=${merge_base_commit.sha}`)).map((entry) => `${entry.name} ${entry.sha}`),
+          )
+          const inherited = (yield* listDir(user.token, owner, name, ".github/workflows")).filter(
+            (entry) => entry.name !== "autofork.yml" && theirs.has(`${entry.name} ${entry.sha}`),
+          )
           files.push(...inherited.map((entry) => ({ path: `.github/workflows/${entry.name}`, content: null })))
         }
       }
