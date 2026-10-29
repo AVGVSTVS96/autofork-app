@@ -311,7 +311,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
       Effect.map((content) => Buffer.from(content, "base64").toString()),
       Effect.orElseSucceed(() => ""),
     )
-    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write")) {
+    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write") || !flow.includes("workflow-token-url")) {
       const upstream = repo.parent?.full_name ?? `${owner}/${name}`
       const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
       const pinned = root.has("pnpm-lock.yaml") && (yield* pinsPnpm(user.token, upstream))
@@ -324,10 +324,12 @@ export const start = (user: User, owner: string, name: string, change: string, a
           { path: ".autofork/.gitignore", content: "!*.patch\n" },
           ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
-        const inherited = yield* listDir(user.token, owner, name, ".github/workflows")
-        files.push(
-          ...inherited.filter((entry) => entry.type === "file" && entry.name !== "autofork.yml").map((entry) => ({ path: `.github/workflows/${entry.name}`, content: null })),
-        )
+        if (repo.parent) {
+          const [parentOwner = "", parentName = ""] = repo.parent.full_name.split("/")
+          const theirs = new Set((yield* listDir(user.token, parentOwner, parentName, ".github/workflows")).map((entry) => `${entry.name} ${entry.sha}`))
+          const inherited = (yield* listDir(user.token, owner, name, ".github/workflows")).filter((entry) => theirs.has(`${entry.name} ${entry.sha}`))
+          files.push(...inherited.map((entry) => ({ path: `.github/workflows/${entry.name}`, content: null })))
+        }
       }
     }
     const sha = yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)

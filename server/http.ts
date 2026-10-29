@@ -141,7 +141,8 @@ const callback = HttpRouter.add("GET", "/api/github/callback", (request) =>
 
 const refused = Effect.catchCause((cause) => {
   const error = Cause.squash(cause)
-  return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "not allowed" }, { status: 403 }))
+  const answer = HttpServerResponse.jsonUnsafe({ error: error instanceof Problem ? error.message : "not allowed" }, { status: 403 })
+  return error instanceof Problem ? Effect.succeed(answer) : Effect.logWarning(cause).pipe(Effect.as(answer))
 })
 
 const codexAuth = HttpRouter.add("POST", "/api/chatgpt/auth", (request) =>

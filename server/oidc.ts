@@ -49,6 +49,12 @@ const verify = (jwt: string) =>
     return claims
   })
 
+const hiccups = {
+  while: (error: GitHub.GitHubError) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
+  schedule: Schedule.exponential("1 second"),
+  times: 3,
+}
+
 const CodexAuth = Schema.Struct({ tokens: Schema.Struct({ refresh_token: Schema.String }) })
 
 export const saveCodexAuth = (authorization: string | undefined, body: string) =>
@@ -60,11 +66,7 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
     const [owner = "", name = ""] = claims.repository.split("/")
     yield* GitHub.repoToken(owner, name).pipe(
       Effect.flatMap((token) => GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)),
-      Effect.retry({
-        while: (error) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
-        schedule: Schedule.exponential("1 second"),
-        times: 3,
-      }),
+      Effect.retry(hiccups),
     )
   })
 
@@ -72,6 +74,6 @@ export const workflowToken = (authorization: string | undefined) =>
   Effect.gen(function* () {
     const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
     const [owner = "", name = ""] = claims.repository.split("/")
-    const { token } = yield* GitHub.workflowToken(owner, name)
+    const { token } = yield* GitHub.workflowToken(owner, name).pipe(Effect.retry(hiccups))
     return token
   })
