@@ -13,7 +13,7 @@ let fetched = 0
 const jwks = (fresh = false) => {
   if (!keys || (fresh && Date.now() - fetched > 60_000)) {
     fetched = Date.now()
-    keys = fetch(`${ISSUER}/.well-known/jwks`)
+    keys = fetch(`${ISSUER}/.well-known/jwks`, { signal: AbortSignal.timeout(10_000) })
       .then((response) => {
         if (!response.ok) throw new Error(`GitHub's signing keys answered ${response.status}`)
         return response.json() as Promise<{ keys?: Jwk[] }>
