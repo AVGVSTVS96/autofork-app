@@ -17,7 +17,7 @@ type GitHubRepo = {
   created_at: string
   fork: boolean
   private: boolean
-  parent?: { full_name: string; description: string | null }
+  parent?: { full_name: string; description: string | null; default_branch: string }
   permissions?: { admin: boolean; push: boolean }
 }
 
@@ -93,7 +93,8 @@ const setupSteps = (files: ReadonlySet<string>, pnpmPinned: boolean) => {
   return []
 }
 
-export const CODEX_AUTH_URL = "https://autofork-app.vercel.app/api/chatgpt/auth"
+const API = "https://autofork-app.vercel.app/api"
+export const CODEX_AUTH_URL = `${API}/chatgpt/auth`
 
 const workflow = (branch: string, setup: ReadonlyArray<string>) =>
   [
@@ -126,6 +127,7 @@ const workflow = (branch: string, setup: ReadonlyArray<string>) =>
     ...setup,
     "      - uses: AVGVSTVS96/autofork@v1",
     "        with:",
+    `          workflow-token-url: ${API}/github/token`,
     `          codex-auth-url: ${CODEX_AUTH_URL}`,
     "        env:",
     "          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
@@ -274,19 +276,26 @@ const releasesExist = (token: GitHub.Token, repo: string) =>
     Effect.orElseSucceed(() => false),
   )
 
-const disableInherited = (token: string, owner: string, name: string) =>
+/* Workflows still as upstream had them where the fork branched off, to delete. Any the user changed are theirs and stay */
+const inheritedWorkflows = (token: GitHub.Token, repo: GitHubRepo, branch: string) =>
   Effect.gen(function* () {
-    const { workflows } = yield* GitHub.request<{ workflows: { id: number; path: string; state: string }[] }>(
+    if (!repo.parent) return []
+    const [parentOwner = "", parentName = ""] = repo.parent.full_name.split("/")
+    const { merge_base_commit } = yield* GitHub.request<{ merge_base_commit: { sha: string } }>(
       token,
       "GET",
-      `/repos/${owner}/${name}/actions/workflows?per_page=100`,
+      `/repos/${repo.full_name}/compare/${parentOwner}:${repo.parent.default_branch}...${branch}`,
     )
-    yield* Effect.forEach(
-      workflows.filter((flow) => flow.path !== ".github/workflows/autofork.yml" && flow.state === "active"),
-      (flow) => GitHub.request(token, "PUT", `/repos/${owner}/${name}/actions/workflows/${flow.id}/disable`).pipe(Effect.ignore),
-      { concurrency: 8 },
+    const theirs = new Set(
+      (yield* listDir(token, parentOwner, parentName, `.github/workflows?ref=${merge_base_commit.sha}`)).map((entry) => `${entry.name} ${entry.sha}`),
     )
-  })
+    return (yield* listDir(token, repo.owner.login, repo.name, ".github/workflows"))
+      .filter((entry) => entry.name !== "autofork.yml" && theirs.has(`${entry.name} ${entry.sha}`))
+      .map((entry): GitHub.File => ({ path: `.github/workflows/${entry.name}`, content: null }))
+  }).pipe(
+    Effect.retry({ schedule: Schedule.exponential("1 second"), times: 2 }),
+    Effect.orElseSucceed((): GitHub.File[] => []),
+  )
 
 type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
 
@@ -323,7 +332,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
       Effect.map((content) => Buffer.from(content, "base64").toString()),
       Effect.orElseSucceed(() => ""),
     )
-    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write")) {
+    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write") || !flow.includes("workflow-token-url")) {
       const upstream = repo.parent?.full_name ?? `${owner}/${name}`
       const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
       const pinned = root.has("pnpm-lock.yaml") && (yield* pinsPnpm(user.token, upstream))
@@ -336,7 +345,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
           { path: ".autofork/.gitignore", content: "!*.patch\n" },
           ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
-        yield* disableInherited(user.token, owner, name)
+        files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }
     }
     const sha = yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)

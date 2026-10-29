@@ -9,10 +9,26 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 type Jwk = JsonWebKey & { kid: string }
 
 let keys: Promise<Jwk[]> | undefined
-const jwks = () =>
-  (keys ??= fetch(`${ISSUER}/.well-known/jwks`)
-    .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
-    .then(({ keys }) => keys))
+let fetched = 0
+const jwks = (fresh = false) => {
+  if (!keys || (fresh && Date.now() - fetched > 60_000)) {
+    fetched = Date.now()
+    keys = fetch(`${ISSUER}/.well-known/jwks`, { signal: AbortSignal.timeout(10_000) })
+      .then((response) => {
+        if (!response.ok) throw new Error(`GitHub's signing keys answered ${response.status}`)
+        return response.json() as Promise<{ keys?: Jwk[] }>
+      })
+      .then(({ keys }) => {
+        if (!Array.isArray(keys)) throw new Error("GitHub's signing keys came back without keys")
+        return keys
+      })
+      .catch((error) => {
+        keys = undefined
+        throw error
+      })
+  }
+  return keys
+}
 
 const Claims = Schema.Struct({
   iss: Schema.Literal(ISSUER),
@@ -29,7 +45,8 @@ const verify = (jwt: string) =>
   Effect.gen(function* () {
     const [head = "", body = "", signature = ""] = jwt.split(".")
     const { kid } = decode(head) as { kid?: string }
-    const jwk = (yield* Effect.promise(jwks)).find((key) => key.kid === kid)
+    const find = (fresh: boolean) => Effect.promise(() => jwks(fresh)).pipe(Effect.map((all) => all.find((key) => key.kid === kid)))
+    const jwk = (yield* find(false)) ?? (yield* find(true))
     if (!jwk) return yield* new Problem({ message: "unknown signing key" })
     const valid = yield* Effect.promise(async () =>
       crypto.subtle.verify(
@@ -44,10 +61,16 @@ const verify = (jwt: string) =>
     if (claims.exp * 1000 < Date.now()) return yield* new Problem({ message: "expired" })
     if (claims.event_name.startsWith("pull_request")) return yield* new Problem({ message: "not from pull requests" })
     if (!claims.workflow_ref.startsWith(`${claims.repository}/.github/workflows/autofork.yml@`)) {
-      return yield* new Problem({ message: "only the autofork workflow can save a sign-in" })
+      return yield* new Problem({ message: "only the autofork workflow can ask" })
     }
     return claims
   })
+
+const hiccups = {
+  while: (error: GitHub.GitHubError) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
+  schedule: Schedule.exponential("1 second"),
+  times: 3,
+}
 
 const CodexAuth = Schema.Struct({ tokens: Schema.Struct({ refresh_token: Schema.String }) })
 
@@ -60,10 +83,14 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
     const [owner = "", name = ""] = claims.repository.split("/")
     yield* GitHub.repoToken(owner, name).pipe(
       Effect.flatMap((token) => GitHub.setSecret(token, owner, name, "CODEX_AUTH", body)),
-      Effect.retry({
-        while: (error) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
-        schedule: Schedule.exponential("1 second"),
-        times: 3,
-      }),
+      Effect.retry(hiccups),
     )
+  })
+
+export const workflowToken = (authorization: string | undefined) =>
+  Effect.gen(function* () {
+    const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
+    const [owner = "", name = ""] = claims.repository.split("/")
+    const { token } = yield* GitHub.workflowToken(owner, name).pipe(Effect.retry(hiccups))
+    return token
   })

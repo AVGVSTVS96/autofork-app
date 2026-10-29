@@ -116,17 +116,20 @@ export const appToken = minted(
   }),
 )
 
-export const repoToken = (owner: string, name: string) =>
-  minted(
-    `${owner}/${name}`.toLowerCase(),
-    Effect.gen(function* () {
-      const jwt = yield* appJwt
-      const installation = yield* request<{ id: number }>(jwt, "GET", `/repos/${owner}/${name}/installation`)
-      return yield* request<{ token: string; expires_at: string }>(jwt, "POST", `/app/installations/${installation.id}/access_tokens`, {
-        repositories: [name],
-      })
-    }),
-  )
+const installationToken = (owner: string, name: string, permissions?: Record<string, string>) =>
+  Effect.gen(function* () {
+    const jwt = yield* appJwt
+    const installation = yield* request<{ id: number }>(jwt, "GET", `/repos/${owner}/${name}/installation`)
+    return yield* request<{ token: string; expires_at: string }>(jwt, "POST", `/app/installations/${installation.id}/access_tokens`, {
+      repositories: [name],
+      permissions,
+    })
+  })
+
+export const repoToken = (owner: string, name: string) => minted(`${owner}/${name}`.toLowerCase(), installationToken(owner, name))
+
+/* A workflow's own GITHUB_TOKEN can't push workflow files, so a sync that changes the fork's pushes with this */
+export const workflowToken = (owner: string, name: string) => installationToken(owner, name, { contents: "write", workflows: "write" })
 
 type OAuthTokens = {
   access_token?: string
@@ -221,7 +224,8 @@ export const deleteSecret = (token: string, owner: string, name: string, secret:
     Effect.catchIf(missing, () => Effect.void),
   )
 
-export type File = { readonly path: string; readonly content: string }
+/* A null content deletes the file */
+export type File = { readonly path: string; readonly content: string | null }
 
 export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>) =>
   Effect.gen(function* () {
@@ -229,7 +233,7 @@ export const commit = (token: string, owner: string, name: string, branch: strin
     const parent = yield* request<{ tree: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/commits/${ref.object.sha}`)
     const tree = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/trees`, {
       base_tree: parent.tree.sha,
-      tree: files.map((file) => ({ path: file.path, mode: "100644", type: "blob", content: file.content })),
+      tree: files.map(({ path, content }) => ({ path, mode: "100644", type: "blob", ...(content === null ? { sha: null } : { content }) })),
     })
     const created = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/commits`, {
       message,
