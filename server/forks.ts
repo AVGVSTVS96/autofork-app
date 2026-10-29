@@ -276,6 +276,24 @@ const releasesExist = (token: GitHub.Token, repo: string) =>
     Effect.orElseSucceed(() => false),
   )
 
+/* Workflows still as upstream had them where the fork branched off, to delete. Any the user changed are theirs and stay */
+const inheritedWorkflows = (token: GitHub.Token, repo: GitHubRepo, branch: string) =>
+  Effect.gen(function* () {
+    if (!repo.parent) return []
+    const [parentOwner = "", parentName = ""] = repo.parent.full_name.split("/")
+    const { merge_base_commit } = yield* GitHub.request<{ merge_base_commit: { sha: string } }>(
+      token,
+      "GET",
+      `/repos/${repo.full_name}/compare/${parentOwner}:${repo.parent.default_branch}...${branch}`,
+    )
+    const theirs = new Set(
+      (yield* listDir(token, parentOwner, parentName, `.github/workflows?ref=${merge_base_commit.sha}`)).map((entry) => `${entry.name} ${entry.sha}`),
+    )
+    return (yield* listDir(token, repo.owner.login, repo.name, ".github/workflows"))
+      .filter((entry) => entry.name !== "autofork.yml" && theirs.has(`${entry.name} ${entry.sha}`))
+      .map((entry): GitHub.File => ({ path: `.github/workflows/${entry.name}`, content: null }))
+  }).pipe(Effect.orElseSucceed((): GitHub.File[] => []))
+
 type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
 
 const pinsPnpm = (token: GitHub.Token, repo: string) =>
@@ -324,21 +342,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
           { path: ".autofork/.gitignore", content: "!*.patch\n" },
           ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
-        if (repo.parent) {
-          const [parentOwner = "", parentName = ""] = repo.parent.full_name.split("/")
-          const { merge_base_commit } = yield* GitHub.request<{ merge_base_commit: { sha: string } }>(
-            user.token,
-            "GET",
-            `/repos/${owner}/${name}/compare/${parentOwner}:${repo.parent.default_branch}...${branch}`,
-          )
-          const theirs = new Set(
-            (yield* listDir(user.token, parentOwner, parentName, `.github/workflows?ref=${merge_base_commit.sha}`)).map((entry) => `${entry.name} ${entry.sha}`),
-          )
-          const inherited = (yield* listDir(user.token, owner, name, ".github/workflows")).filter(
-            (entry) => entry.name !== "autofork.yml" && theirs.has(`${entry.name} ${entry.sha}`),
-          )
-          files.push(...inherited.map((entry) => ({ path: `.github/workflows/${entry.name}`, content: null })))
-        }
+        files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }
     }
     const sha = yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)

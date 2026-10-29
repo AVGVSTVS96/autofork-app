@@ -9,8 +9,10 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 type Jwk = JsonWebKey & { kid: string }
 
 let keys: Promise<Jwk[]> | undefined
+let fetched = 0
 const jwks = (fresh = false) => {
-  if (fresh || !keys)
+  if (!keys || (fresh && Date.now() - fetched > 60_000)) {
+    fetched = Date.now()
     keys = fetch(`${ISSUER}/.well-known/jwks`)
       .then((response) => response.json() as Promise<{ keys: Jwk[] }>)
       .then(({ keys }) => keys)
@@ -18,6 +20,7 @@ const jwks = (fresh = false) => {
         keys = undefined
         throw error
       })
+  }
   return keys
 }
 
