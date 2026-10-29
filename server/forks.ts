@@ -93,7 +93,8 @@ const setupSteps = (files: ReadonlySet<string>, pnpmPinned: boolean) => {
   return []
 }
 
-export const CODEX_AUTH_URL = "https://autofork-app.vercel.app/api/chatgpt/auth"
+const API = "https://autofork-app.vercel.app/api"
+export const CODEX_AUTH_URL = `${API}/chatgpt/auth`
 
 const workflow = (branch: string, setup: ReadonlyArray<string>) =>
   [
@@ -126,6 +127,7 @@ const workflow = (branch: string, setup: ReadonlyArray<string>) =>
     ...setup,
     "      - uses: AVGVSTVS96/autofork@v1",
     "        with:",
+    `          workflow-token-url: ${API}/github/token`,
     `          codex-auth-url: ${CODEX_AUTH_URL}`,
     "        env:",
     "          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
@@ -274,20 +276,6 @@ const releasesExist = (token: GitHub.Token, repo: string) =>
     Effect.orElseSucceed(() => false),
   )
 
-const disableInherited = (token: string, owner: string, name: string) =>
-  Effect.gen(function* () {
-    const { workflows } = yield* GitHub.request<{ workflows: { id: number; path: string; state: string }[] }>(
-      token,
-      "GET",
-      `/repos/${owner}/${name}/actions/workflows?per_page=100`,
-    )
-    yield* Effect.forEach(
-      workflows.filter((flow) => flow.path !== ".github/workflows/autofork.yml" && flow.state === "active"),
-      (flow) => GitHub.request(token, "PUT", `/repos/${owner}/${name}/actions/workflows/${flow.id}/disable`).pipe(Effect.ignore),
-      { concurrency: 8 },
-    )
-  })
-
 type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
 
 const pinsPnpm = (token: GitHub.Token, repo: string) =>
@@ -336,7 +324,10 @@ export const start = (user: User, owner: string, name: string, change: string, a
           { path: ".autofork/.gitignore", content: "!*.patch\n" },
           ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
-        yield* disableInherited(user.token, owner, name)
+        const inherited = yield* listDir(user.token, owner, name, ".github/workflows")
+        files.push(
+          ...inherited.filter((entry) => entry.type === "file" && entry.name !== "autofork.yml").map((entry) => ({ path: `.github/workflows/${entry.name}`, content: null })),
+        )
       }
     }
     const sha = yield* GitHub.commit(user.token, owner, name, branch, `autofork: ${change.trim()}`, files)

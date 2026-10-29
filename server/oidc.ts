@@ -44,7 +44,7 @@ const verify = (jwt: string) =>
     if (claims.exp * 1000 < Date.now()) return yield* new Problem({ message: "expired" })
     if (claims.event_name.startsWith("pull_request")) return yield* new Problem({ message: "not from pull requests" })
     if (!claims.workflow_ref.startsWith(`${claims.repository}/.github/workflows/autofork.yml@`)) {
-      return yield* new Problem({ message: "only the autofork workflow can save a sign-in" })
+      return yield* new Problem({ message: "only the autofork workflow can ask" })
     }
     return claims
   })
@@ -66,4 +66,12 @@ export const saveCodexAuth = (authorization: string | undefined, body: string) =
         times: 3,
       }),
     )
+  })
+
+export const workflowToken = (authorization: string | undefined) =>
+  Effect.gen(function* () {
+    const claims = yield* verify(authorization?.replace(/^Bearer\s+/i, "") ?? "")
+    const [owner = "", name = ""] = claims.repository.split("/")
+    const { token } = yield* GitHub.workflowToken(owner, name)
+    return token
   })
