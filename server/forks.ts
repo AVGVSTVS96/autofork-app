@@ -277,23 +277,27 @@ export const start = (user: User, owner: string, name: string, change: string, a
     const branch = repo.default_branch
     yield* GitHub.request(user.token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`).pipe(Effect.retry(retrying))
 
+    const control = yield* listDir(user.token, owner, name, ".autofork")
+    const managed = control.some((entry) => entry.name === "config.json")
+    const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
+      Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
+      Effect.map((content) => Buffer.from(content, "base64").toString()),
+      Effect.orElseSucceed(() => ""),
+    )
+    if (managed && flow && !flow.includes(SECRETS[agent]))
+      return yield* new Problem({
+        message: `This fork's .github/workflows/autofork.yml doesn't pass ${SECRETS[agent]} to autofork. Add it to the autofork step's env, or pick the other agent.`,
+      })
+
     yield* GitHub.setSecret(user.token, owner, name, SECRETS[agent], credential)
     yield* GitHub.deleteSecret(user.token, owner, name, SECRETS[agent === "claude" ? "chatgpt" : "claude"])
     yield* GitHub.request(user.token, "PUT", `/repos/${owner}/${name}/actions/permissions`, { enabled: true, allowed_actions: "all" })
     if (!repo.has_issues) yield* GitHub.request(user.token, "PATCH", `/repos/${owner}/${name}`, { has_issues: true }).pipe(Effect.ignore)
     yield* describe(user.token, repo)
 
-    const control = yield* listDir(user.token, owner, name, ".autofork")
-    const managed = control.some((entry) => entry.name === "config.json")
     const id = freshId(control, change)
-
     const files: GitHub.File[] = [{ path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) }]
-    const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
-      Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
-      Effect.map((content) => Buffer.from(content, "base64").toString()),
-      Effect.orElseSucceed(() => ""),
-    )
-    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write") || !flow.includes("workflow-token-url")) {
+    if (!managed || !flow) {
       files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch) })
       if (!managed) {
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
@@ -359,17 +363,18 @@ const told = new Map<number, Pick<Run, "log" | "moved">>()
 
 /* action.sh pushes the sync commit, while the run is going, on top of the commit it checked out; a run that pushed nothing says why in its log */
 const outcome = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun, job: number, describe: (id: string) => string) => {
-  const hit = told.get(run.id)
+  const hit = told.get(job)
   if (hit) return Effect.succeed(hit)
   const query = new URLSearchParams({ sha: run.head_branch, since: run.run_started_at, until: run.updated_at, per_page: "20" })
   return GitHub.request<{ parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
     Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && each.commit.message.startsWith(SYNC))),
+    Effect.orElseSucceed(() => undefined),
     Effect.flatMap((sync) =>
       sync
         ? Effect.succeed({ log: synced(sync.commit.message, describe), moved: false })
         : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job}/logs`).pipe(Effect.map(unsynced)),
     ),
-    Effect.tap((story) => Effect.sync(() => keep(told, run.id, story, 500))),
+    Effect.tap((story) => Effect.sync(() => keep(told, job, story, 500))),
   )
 }
 
@@ -386,7 +391,7 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
     const job = jobs[0]
     const untold = { log: [], moved: false }
     const log =
-      job && job.status === "completed"
+      job && run.status === "completed"
         ? yield* outcome(token, owner, name, run, job.id, describe).pipe(Effect.orElseSucceed(() => untold))
         : untold
     return {
