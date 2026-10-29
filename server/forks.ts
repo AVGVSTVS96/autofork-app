@@ -282,7 +282,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
     const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
       Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
       Effect.map((content) => Buffer.from(content, "base64").toString()),
-      Effect.orElseSucceed(() => ""),
+      Effect.catchIf(GitHub.missing, () => Effect.succeed("")),
     )
     if (managed && flow && !flow.includes(SECRETS[agent]))
       return yield* new Problem({
@@ -336,7 +336,7 @@ export const addChange = (user: User, owner: string, name: string, change: strin
     return { owner, name }
   })
 
-type Job = { id: number; status: string; conclusion: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
+type Job = { id: number; status: string; conclusion: string | null; started_at: string; completed_at: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
 type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string; head_sha: string; head_branch: string }
 
 const SYNC = "autofork: sync "
@@ -361,20 +361,19 @@ const unsynced = (raw: string): Pick<Run, "log" | "moved"> => {
 
 const told = new Map<number, Pick<Run, "log" | "moved">>()
 
-/* action.sh pushes the sync commit, while the run is going, on top of the commit it checked out; a run that pushed nothing says why in its log */
-const outcome = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun, job: number, describe: (id: string) => string) => {
-  const hit = told.get(job)
+/* action.sh pushes the sync commit, while the job is going, on top of the commit it checked out; a job that pushed nothing says why in its log */
+const outcome = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun, job: Job, describe: (id: string) => string) => {
+  const hit = told.get(job.id)
   if (hit) return Effect.succeed(hit)
-  const query = new URLSearchParams({ sha: run.head_branch, since: run.run_started_at, until: run.updated_at, per_page: "20" })
+  const query = new URLSearchParams({ sha: run.head_branch, since: job.started_at, until: job.completed_at!, per_page: "20" })
   return GitHub.request<{ parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
     Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && each.commit.message.startsWith(SYNC))),
-    Effect.orElseSucceed(() => undefined),
     Effect.flatMap((sync) =>
       sync
-        ? Effect.succeed({ log: synced(sync.commit.message, describe), moved: false })
-        : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job}/logs`).pipe(Effect.map(unsynced)),
+        ? Effect.succeed({ log: [...new Set(synced(sync.commit.message, describe))], moved: false })
+        : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(Effect.map(unsynced)),
     ),
-    Effect.tap((story) => Effect.sync(() => keep(told, job, story, 500))),
+    Effect.tap((story) => Effect.sync(() => keep(told, job.id, story, 500))),
   )
 }
 
@@ -391,8 +390,8 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
     const job = jobs[0]
     const untold = { log: [], moved: false }
     const log =
-      job && run.status === "completed"
-        ? yield* outcome(token, owner, name, run, job.id, describe).pipe(Effect.orElseSucceed(() => untold))
+      job?.completed_at
+        ? yield* outcome(token, owner, name, run, job, describe).pipe(Effect.orElseSucceed(() => untold))
         : untold
     return {
       url: run.html_url,
