@@ -340,6 +340,7 @@ type Job = { id: number; status: string; conclusion: string | null; started_at: 
 type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string; head_sha: string; head_branch: string }
 
 const SYNC = "autofork: sync "
+const SUBJECT = /^autofork: sync \S+ to [0-9a-f]{12}(?:\n|$)/
 const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
 
 const synced = (message: string, name: (id: string) => string) =>
@@ -367,7 +368,7 @@ const outcome = (token: GitHub.Token, owner: string, name: string, run: Workflow
   if (hit) return Effect.succeed(hit)
   const query = new URLSearchParams({ sha: run.head_branch, since: job.started_at, until: job.completed_at!, per_page: "20" })
   return GitHub.request<{ parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
-    Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && each.commit.message.startsWith(SYNC))),
+    Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && SUBJECT.test(each.commit.message))),
     Effect.flatMap((sync) =>
       sync
         ? Effect.succeed({ log: [...new Set(synced(sync.commit.message, describe))], moved: false })
