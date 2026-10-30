@@ -21,11 +21,6 @@ type GitHubRepo = {
   permissions?: { admin: boolean; push: boolean }
 }
 
-const KNOWN: Record<string, { verify: string }> = {
-  "pingdotgg/t3code": { verify: "pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @t3tools/web typecheck" },
-  "davidmokos/expo-gpt-live": { verify: "npm ci && npm run check" },
-}
-
 const toRepo = (repo: GitHubRepo): Repo => ({
   owner: repo.owner.login,
   name: repo.name,
@@ -80,23 +75,10 @@ export const resolve = (q: string, token: GitHub.Token) =>
   })
 
 
-const setupSteps = (files: ReadonlySet<string>, pnpmPinned: boolean) => {
-  const node = files.has(".nvmrc")
-    ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .nvmrc"]
-    : files.has(".node-version")
-      ? ["      - uses: actions/setup-node@v7", "        with:", "          node-version-file: .node-version"]
-      : ["      - uses: actions/setup-node@v7", "        with:", "          node-version: 24"]
-  if (files.has("pnpm-lock.yaml"))
-    return ["      - uses: pnpm/action-setup@v6", ...(pnpmPinned ? [] : ["        with:", "          version: 10"]), ...node]
-  if (files.has("bun.lock") || files.has("bun.lockb")) return ["      - uses: oven-sh/setup-bun@v2"]
-  if (files.has("package-lock.json") || files.has("yarn.lock") || files.has("package.json")) return node
-  return []
-}
-
 const API = "https://autofork-app.vercel.app/api"
 export const CODEX_AUTH_URL = `${API}/chatgpt/auth`
 
-const workflow = (branch: string, setup: ReadonlyArray<string>) =>
+const workflow = (branch: string) =>
   [
     "name: autofork",
     "",
@@ -124,7 +106,6 @@ const workflow = (branch: string, setup: ReadonlyArray<string>) =>
     "        with:",
     "          fetch-depth: 0",
     "          persist-credentials: false",
-    ...setup,
     "      - uses: AVGVSTVS96/autofork@v1",
     "        with:",
     `          workflow-token-url: ${API}/github/token`,
@@ -265,17 +246,6 @@ export const prepare = (user: User, owner: string, name: string, into: string | 
 
 const retrying = { schedule: Schedule.spaced("2 seconds"), times: 15 }
 
-const releasesExist = (token: GitHub.Token, repo: string) =>
-  GitHub.request(token, "GET", `/repos/${repo}/releases/latest`).pipe(
-    Effect.as(true),
-    Effect.catch(() =>
-      GitHub.request<{ name: string }[]>(token, "GET", `/repos/${repo}/tags?per_page=100`).pipe(
-        Effect.map((tags) => tags.some((tag) => !tag.name.includes("-"))),
-      ),
-    ),
-    Effect.orElseSucceed(() => false),
-  )
-
 /* Workflows still as upstream had them where the fork branched off, to delete. Any the user changed are theirs and stay */
 const inheritedWorkflows = (token: GitHub.Token, repo: GitHubRepo, branch: string) =>
   Effect.gen(function* () {
@@ -297,15 +267,6 @@ const inheritedWorkflows = (token: GitHub.Token, repo: GitHubRepo, branch: strin
     Effect.orElseSucceed((): GitHub.File[] => []),
   )
 
-type PackageJson = { packageManager?: string; devEngines?: { packageManager?: { name?: string } | { name?: string }[] } }
-
-const pinsPnpm = (token: GitHub.Token, repo: string) =>
-  GitHub.text(token, `/repos/${repo}/contents/package.json`).pipe(
-    Effect.map((raw) => JSON.parse(Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()) as PackageJson),
-    Effect.map((pkg) => !!pkg.packageManager?.startsWith("pnpm@") || [pkg.devEngines?.packageManager ?? []].flat().some((each) => each.name === "pnpm")),
-    Effect.orElseSucceed(() => false),
-  )
-
 const SECRETS = { claude: "CLAUDE_CODE_OAUTH_TOKEN", chatgpt: "CODEX_AUTH" } as const satisfies Record<Agent, string>
 
 export const start = (user: User, owner: string, name: string, change: string, agent: Agent, credential: string) =>
@@ -316,33 +277,32 @@ export const start = (user: User, owner: string, name: string, change: string, a
     const branch = repo.default_branch
     yield* GitHub.request(user.token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`).pipe(Effect.retry(retrying))
 
+    const control = yield* listDir(user.token, owner, name, ".autofork")
+    const managed = control.some((entry) => entry.name === "config.json")
+    const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
+      Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
+      Effect.map((content) => Buffer.from(content, "base64").toString()),
+      Effect.catchIf(GitHub.missing, () => Effect.succeed("")),
+    )
+    if (managed && flow && !flow.includes(SECRETS[agent]))
+      return yield* new Problem({
+        message: `This fork's .github/workflows/autofork.yml doesn't pass ${SECRETS[agent]} to autofork. Add it to the autofork step's env, or pick the other agent.`,
+      })
+
     yield* GitHub.setSecret(user.token, owner, name, SECRETS[agent], credential)
     yield* GitHub.deleteSecret(user.token, owner, name, SECRETS[agent === "claude" ? "chatgpt" : "claude"])
     yield* GitHub.request(user.token, "PUT", `/repos/${owner}/${name}/actions/permissions`, { enabled: true, allowed_actions: "all" })
     if (!repo.has_issues) yield* GitHub.request(user.token, "PATCH", `/repos/${owner}/${name}`, { has_issues: true }).pipe(Effect.ignore)
     yield* describe(user.token, repo)
 
-    const control = yield* listDir(user.token, owner, name, ".autofork")
-    const managed = control.some((entry) => entry.name === "config.json")
     const id = freshId(control, change)
-
     const files: GitHub.File[] = [{ path: `.autofork/${id}/PATCH.md`, content: patchDoc(change) }]
-    const flow = yield* GitHub.text(user.token, `/repos/${owner}/${name}/contents/.github/workflows/autofork.yml?ref=${branch}`).pipe(
-      Effect.map((raw) => (JSON.parse(raw) as { content: string }).content),
-      Effect.map((content) => Buffer.from(content, "base64").toString()),
-      Effect.orElseSucceed(() => ""),
-    )
-    if (!managed || !flow.includes(SECRETS[agent]) || !flow.includes("issues: write") || !flow.includes("workflow-token-url")) {
-      const upstream = repo.parent?.full_name ?? `${owner}/${name}`
-      const root = new Set((yield* listDir(user.token, upstream.split("/")[0]!, upstream.split("/")[1]!, "")).map((entry) => entry.name))
-      const pinned = root.has("pnpm-lock.yaml") && (yield* pinsPnpm(user.token, upstream))
-      files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch, setupSteps(root, pinned)) })
+    if (!managed || !flow) {
+      files.push({ path: ".github/workflows/autofork.yml", content: workflow(branch) })
       if (!managed) {
-        const follow = (yield* releasesExist(user.token, upstream)) ? "releases" : branch
-        const config = { upstream, follow, verify: KNOWN[upstream]?.verify }
+        const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
-          { path: ".autofork/config.json", content: `${JSON.stringify(config, null, 2)}\n` },
-          { path: ".autofork/.gitignore", content: "!*.patch\n" },
+          { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
           ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
@@ -376,37 +336,45 @@ export const addChange = (user: User, owner: string, name: string, change: strin
     return { owner, name }
   })
 
-type Job = { id: number; status: string; conclusion: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
-type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string }
+type Job = { id: number; status: string; conclusion: string | null; started_at: string; completed_at: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
+type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string; head_sha: string; head_branch: string }
 
+const SYNC = "autofork: sync "
+const SUBJECT = /^autofork: sync \S+ to [0-9a-f]{12}(?:\n|$)/
 const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
 
-const story = (raw: string, name: (id: string) => string): Pick<Run, "log" | "moved"> => {
-  const lines = raw.split("\n").map((line) => line.replace(/^\S+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trim())
-  const moved = lines.find((line) => MOVED.test(line))
-  if (moved) return { log: [moved], moved: true }
-  const told = lines.flatMap((line): string[] => {
+const synced = (message: string, name: (id: string) => string) =>
+  message.split("\n").flatMap((line): string[] => {
     let match: RegExpMatchArray | null
     if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
     if ((match = line.match(/^healed (\S+)$/))) return [`Rebuilt "${name(match[1]!)}" on the new release`]
     if ((match = line.match(/^upstream has (\S+): (.+)$/))) return [`Paused "${name(match[1]!)}": ${match[2]}`]
-    if (/^already up to date/.test(line)) return ["Already current"]
-    if ((match = line.match(/^(\S+) doesn't apply/))) return [`"${name(match[1]!)}" waits for a run that can rebuild it`]
-    if ((match = line.match(/^autofork: (.+)$/)) && !line.startsWith("autofork: sync ")) return [match[1]!]
-    if (/^(verify failed|the agent|these files)/.test(line)) return [line]
     return []
   })
-  return { log: [...new Set(told)], moved: false }
+
+const unsynced = (raw: string): Pick<Run, "log" | "moved"> => {
+  const lines = raw.split("\n").map((line) => line.replace(/^\S+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trim())
+  const moved = lines.find((line) => MOVED.test(line))
+  if (moved) return { log: [moved], moved: true }
+  const reason = lines.findLast((line) => line.startsWith("autofork: ") && !line.startsWith(SYNC))
+  return { log: reason ? [reason.slice("autofork: ".length)] : [], moved: false }
 }
 
 const told = new Map<number, Pick<Run, "log" | "moved">>()
 
-const finishedLog = (token: GitHub.Token, owner: string, name: string, job: number, describe: (id: string) => string) => {
-  const hit = told.get(job)
+/* action.sh pushes the sync commit, while the job is going, on top of the commit it checked out; a job that pushed nothing says why in its log */
+const outcome = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun, job: Job, describe: (id: string) => string) => {
+  const hit = told.get(job.id)
   if (hit) return Effect.succeed(hit)
-  return GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job}/logs`).pipe(
-    Effect.map((raw) => story(raw, describe)),
-    Effect.tap((story) => Effect.sync(() => keep(told, job, story, 500))),
+  const query = new URLSearchParams({ sha: run.head_branch, since: job.started_at, until: job.completed_at!, per_page: "20" })
+  return GitHub.request<{ parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
+    Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && SUBJECT.test(each.commit.message))),
+    Effect.flatMap((sync) =>
+      sync
+        ? Effect.succeed({ log: [...new Set(synced(sync.commit.message, describe))], moved: false })
+        : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(Effect.map(unsynced)),
+    ),
+    Effect.tap((story) => Effect.sync(() => keep(told, job.id, story, 500))),
   )
 }
 
@@ -423,8 +391,8 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
     const job = jobs[0]
     const untold = { log: [], moved: false }
     const log =
-      job && job.status === "completed"
-        ? yield* finishedLog(token, owner, name, job.id, describe).pipe(Effect.orElseSucceed(() => untold))
+      job?.completed_at
+        ? yield* outcome(token, owner, name, run, job, describe).pipe(Effect.orElseSucceed(() => untold))
         : untold
     return {
       url: run.html_url,
