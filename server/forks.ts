@@ -349,6 +349,7 @@ const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
 const synced = (message: string, name: (id: string) => string) =>
   message.split("\n").flatMap((line): string[] => {
     let match: RegExpMatchArray | null
+    if (line === `built ${NOTE}` || line === `healed ${NOTE}` || line.startsWith(`upstream has ${NOTE}:`)) return []
     if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
     if ((match = line.match(/^healed (\S+)$/))) return [`Rebuilt "${name(match[1]!)}" on the new release`]
     if ((match = line.match(/^upstream has (\S+): (.+)$/))) return [`Paused "${name(match[1]!)}": ${match[2]}`]
