@@ -4,7 +4,7 @@
       "owner": "pingdotgg",
       "name": "t3code",
       "description": null,
-      "stars": 31596,
+      "stars": 31937,
       "avatar": "/repos/t3code.png"
     },
     "others": []
@@ -24,7 +24,7 @@
       "owner": "herdrdev",
       "name": "herdr",
       "description": "the runtime your coding agents live on",
-      "stars": 46569,
+      "stars": 46632,
       "avatar": "/repos/herdr.svg"
     },
     "others": []
@@ -34,7 +34,7 @@
       "owner": "ghostty-org",
       "name": "ghostty",
       "description": "👻 Ghostty is a fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.",
-      "stars": 62943,
+      "stars": 62966,
       "avatar": "/repos/ghostty.png"
     },
     "others": []
@@ -44,7 +44,7 @@
       "owner": "block",
       "name": "buzz",
       "description": "A hive mind communication platform",
-      "stars": 36566,
+      "stars": 36578,
       "avatar": "/repos/buzz.jpg"
     },
     "others": []
@@ -54,7 +54,7 @@
       "owner": "earendil-works",
       "name": "pi",
       "description": "AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI",
-      "stars": 118783,
+      "stars": 118819,
       "avatar": "/repos/pi.png"
     },
     "others": []
@@ -64,7 +64,7 @@
       "owner": "manaflow-ai",
       "name": "cmux",
       "description": "Open source Ghostty-based macOS terminal with vertical tabs and notifications for AI coding agents. Built for multitasking, organization, and programmability.",
-      "stars": 28609,
+      "stars": 28611,
       "avatar": "/repos/cmux.png"
     },
     "others": []
@@ -74,7 +74,7 @@
       "owner": "tmux",
       "name": "tmux",
       "description": "tmux source code",
-      "stars": 50060,
+      "stars": 50062,
       "avatar": "/repos/tmux.png"
     },
     "others": []
