@@ -147,13 +147,14 @@ const describe = (token: GitHub.Token, repo: GitHubRepo) =>
   }).pipe(Effect.ignore)
 
 const readme = (token: GitHub.Token, repo: string, ref?: string) =>
-  GitHub.request<{ path: string; sha: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`)
+  GitHub.request<{ path: string; sha: string; content: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`)
 
 const readmeNote = (token: GitHub.Token, fork: string, branch: string, upstream: string) =>
   Effect.all([readme(token, fork, branch), readme(token, upstream)], { concurrency: 2 }).pipe(
     Effect.map(([mine, theirs]) => {
       const name = upstream.split("/")[1]!
-      return mine.sha === theirs.sha && /^readme\.md$/i.test(mine.path)
+      const text = Buffer.from(mine.content, "base64").toString()
+      return mine.sha === theirs.sha && /^readme\.md$/i.test(mine.path) && text.trim() && !text.includes("autofork.com")
         ? [
             {
               path: `.autofork/${NOTE}/PATCH.md`,
