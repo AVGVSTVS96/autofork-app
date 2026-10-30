@@ -310,7 +310,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
           { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
-          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, `${owner}/${name}`, branch, upstream)),
+          ...(!repo.parent || control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, `${owner}/${name}`, branch, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }
