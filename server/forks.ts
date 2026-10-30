@@ -3,7 +3,6 @@ import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, type ForkState, type MyFork, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
-import { diff, NOTE, noteDoc, withNote } from "./note.ts"
 import type { User } from "./session.ts"
 
 type GitHubRepo = {
@@ -145,22 +144,26 @@ const describe = (token: GitHub.Token, repo: GitHubRepo) =>
     if (description !== repo.description) yield* GitHub.request(token, "PATCH", `/repos/${repo.full_name}`, { description })
   }).pipe(Effect.ignore)
 
-const readme = (token: GitHub.Token, repo: string, ref?: string) =>
-  GitHub.request<{ path: string; sha: string; content: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`).pipe(Effect.option)
+const NOTE = "fork-readme"
 
-const readmeNote = (token: GitHub.Token, owner: string, name: string, branch: string, upstream: string) =>
-  Effect.gen(function* () {
-    const [mine, theirs] = yield* Effect.all([readme(token, `${owner}/${name}`, branch), readme(token, upstream)], { concurrency: 2 })
-    if (mine._tag === "None" || theirs._tag === "None" || mine.value.sha !== theirs.value.sha || !/^readme\.md$/i.test(mine.value.path)) return []
-    const text = Buffer.from(mine.value.content, "base64").toString()
-    const noted = !text.includes("\uFFFD") && withNote(text, upstream)
-    if (!noted) return []
-    return [
-      { path: mine.value.path, content: noted },
-      { path: `.autofork/${NOTE}/PATCH.md`, content: noteDoc(upstream.split("/")[1]!) },
-      { path: `.autofork/${NOTE}/${NOTE}.patch`, content: diff(mine.value.path, text, noted) },
-    ]
-  })
+const readmeNote = (token: GitHub.Token, upstream: string) =>
+  GitHub.request<{ path: string }>(token, "GET", `/repos/${upstream}/readme`).pipe(
+    Effect.map(({ path }) => {
+      const name = upstream.split("/")[1]!
+      return /^readme\.md$/i.test(path)
+        ? [
+            {
+              path: `.autofork/${NOTE}/PATCH.md`,
+              content: `One line under the README's title says this is a personal fork of ${name} that updates itself with autofork, linking ${name}, https://autofork.com and this fork's \`.autofork/\` folder. The rest of the README stays as upstream wrote it.
+
+To drop the line, delete it from the README and delete this folder, in the same commit.
+`,
+            },
+          ]
+        : []
+    }),
+    Effect.orElseSucceed(() => []),
+  )
 
 const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
   GitHub.request<{ name: string; type: string; size: number; sha: string }[]>(token, "GET", `/repos/${owner}/${name}/contents/${path}`).pipe(
@@ -303,7 +306,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
           { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
-          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
+          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }

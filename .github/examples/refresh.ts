@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import { appendFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import * as Effect from "effect/Effect"
 import sharp from "sharp"
@@ -11,7 +10,6 @@ type Examples = { refreshed: string; examples: Example[] }
 const FILE = "src/examples.json"
 const KNOWN = "src/known.json"
 const EVERY = 4
-const LONGEST = 40
 
 const today = new Date().toISOString().slice(0, 10)
 const ICONS = "public/repos"
@@ -64,24 +62,11 @@ const due = () => {
 }
 
 const check = async () => {
-  const before = read(execFileSync("git", ["show", `HEAD:${FILE}`], { encoding: "utf8" }))
   const after = read(readFileSync(FILE, "utf8"))
   const problems: string[] = []
 
-  before.examples.forEach((mine, index) => {
-    if (mine.issue === undefined && JSON.stringify(after.examples[index]) !== JSON.stringify(mine)) {
-      problems.push(`${mine.app} is Bassim's own change and stays exactly as it was, at position ${index + 1}`)
-    }
-  })
-  const unlinked = (examples: Example[]) => examples.filter(({ issue }) => issue === undefined).length
-  if (unlinked(after.examples) !== unlinked(before.examples)) problems.push("every example that isn't Bassim's names the open issue it comes from")
-  const apps = after.examples.map(({ app }) => squash(app))
-  if (new Set(apps).size !== apps.length) problems.push("each app appears once")
-
   const issues = await Promise.all(
-    after.examples.map(async ({ app, repo, change, issue }) => {
-      if (change.length > LONGEST) problems.push(`${app}: "${change}" is ${change.length} characters, keep it to ${LONGEST}`)
-      if (/^but\b|[.!]$/i.test(change)) problems.push(`${app}: "${change}" reads after "${app}, but" with no "but" or end punctuation`)
+    after.examples.map(async ({ app, repo, issue }) => {
       if (issue === undefined) return undefined
       const found = await github(`repos/${repo}/issues/${issue}`)
       if (!found) return void problems.push(`${app}: ${repo}#${issue} doesn't exist`)

@@ -134,7 +134,7 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
       </ul>
       {fork.note ? (
         <p className="fine aside">
-          Your README says this fork updates itself with autofork. To drop that line, delete it and{" "}
+          Your README gets a line saying this fork updates itself with autofork. To drop it, delete the line and{" "}
           <a href={`https://github.com/${fork.owner}/${fork.name}/tree/HEAD/.autofork/fork-readme`} target="_blank" rel="noreferrer">
             .autofork/fork-readme
           </a>
