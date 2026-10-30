@@ -6,4 +6,4 @@ Write each pick the way the site phrases asks: the change on its own, read after
 
 When an app's tracker has nothing worth showing, swap it for another well-known open source app developers use every day, with a request that meets the same bar. Each app appears once, and the list stays about the same length.
 
-Then run `bun .github/examples/refresh.ts check`. It confirms each issue is real and open on that repo, and it refreshes the repo cards (description, stars, avatar). Fix whatever it reports and run it again until it passes. Change nothing else, and don't commit.
+Then run `bun .github/examples/refresh.ts check`. It confirms your examples are where they were, each other one names a real open issue on its repo, and each app appears once, and it refreshes the repo cards (description, stars, avatar). Fix whatever it reports and run it again until it passes. Change nothing else, and don't commit.

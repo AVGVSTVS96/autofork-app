@@ -127,8 +127,10 @@ const slug = (change: string) =>
     .slice(0, 48)
     .replace(/-+$/, "") || "change"
 
+const NOTE = "fork-readme"
+
 const freshId = (entries: ReadonlyArray<{ name: string }>, change: string) => {
-  const taken = new Set(entries.map((entry) => entry.name))
+  const taken = new Set([NOTE, ...entries.map((entry) => entry.name)])
   let id = slug(change)
   for (let n = 2; taken.has(id); n++) id = `${slug(change)}-${n}`
   return id
@@ -144,13 +146,14 @@ const describe = (token: GitHub.Token, repo: GitHubRepo) =>
     if (description !== repo.description) yield* GitHub.request(token, "PATCH", `/repos/${repo.full_name}`, { description })
   }).pipe(Effect.ignore)
 
-const NOTE = "fork-readme"
+const readme = (token: GitHub.Token, repo: string, ref?: string) =>
+  GitHub.request<{ path: string; sha: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`)
 
-const readmeNote = (token: GitHub.Token, upstream: string) =>
-  GitHub.request<{ path: string }>(token, "GET", `/repos/${upstream}/readme`).pipe(
-    Effect.map(({ path }) => {
+const readmeNote = (token: GitHub.Token, fork: string, branch: string, upstream: string) =>
+  Effect.all([readme(token, fork, branch), readme(token, upstream)], { concurrency: 2 }).pipe(
+    Effect.map(([mine, theirs]) => {
       const name = upstream.split("/")[1]!
-      return /^readme\.md$/i.test(path)
+      return mine.sha === theirs.sha && /^readme\.md$/i.test(mine.path)
         ? [
             {
               path: `.autofork/${NOTE}/PATCH.md`,
@@ -306,7 +309,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
           { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
-          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, upstream)),
+          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, `${owner}/${name}`, branch, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }
