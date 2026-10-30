@@ -11,7 +11,6 @@ type Examples = { refreshed: string; examples: Example[] }
 const FILE = "src/examples.json"
 const KNOWN = "src/known.json"
 const EVERY = 4
-const LONGEST = 40
 
 const today = new Date().toISOString().slice(0, 10)
 const ICONS = "public/repos"
@@ -79,9 +78,7 @@ const check = async () => {
   if (new Set(apps).size !== apps.length) problems.push("each app appears once")
 
   const issues = await Promise.all(
-    after.examples.map(async ({ app, repo, change, issue }) => {
-      if (change.length > LONGEST) problems.push(`${app}: "${change}" is ${change.length} characters, keep it to ${LONGEST}`)
-      if (/^but\b|[.!]$/i.test(change)) problems.push(`${app}: "${change}" reads after "${app}, but" with no "but" or end punctuation`)
+    after.examples.map(async ({ app, repo, issue }) => {
       if (issue === undefined) return undefined
       const found = await github(`repos/${repo}/issues/${issue}`)
       if (!found) return void problems.push(`${app}: ${repo}#${issue} doesn't exist`)

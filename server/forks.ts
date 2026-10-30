@@ -3,7 +3,6 @@ import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, type ForkState, type MyFork, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
-import { diff, NOTE, noteDoc, withNote } from "./note.ts"
 import type { User } from "./session.ts"
 
 type GitHubRepo = {
@@ -128,8 +127,10 @@ const slug = (change: string) =>
     .slice(0, 48)
     .replace(/-+$/, "") || "change"
 
+const NOTE = "fork-readme"
+
 const freshId = (entries: ReadonlyArray<{ name: string }>, change: string) => {
-  const taken = new Set(entries.map((entry) => entry.name))
+  const taken = new Set([NOTE, ...entries.map((entry) => entry.name)])
   let id = slug(change)
   for (let n = 2; taken.has(id); n++) id = `${slug(change)}-${n}`
   return id
@@ -146,21 +147,27 @@ const describe = (token: GitHub.Token, repo: GitHubRepo) =>
   }).pipe(Effect.ignore)
 
 const readme = (token: GitHub.Token, repo: string, ref?: string) =>
-  GitHub.request<{ path: string; sha: string; content: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`).pipe(Effect.option)
+  GitHub.request<{ path: string; sha: string; content: string }>(token, "GET", `/repos/${repo}/readme${ref ? `?ref=${ref}` : ""}`)
 
-const readmeNote = (token: GitHub.Token, owner: string, name: string, branch: string, upstream: string) =>
-  Effect.gen(function* () {
-    const [mine, theirs] = yield* Effect.all([readme(token, `${owner}/${name}`, branch), readme(token, upstream)], { concurrency: 2 })
-    if (mine._tag === "None" || theirs._tag === "None" || mine.value.sha !== theirs.value.sha || !/^readme\.md$/i.test(mine.value.path)) return []
-    const text = Buffer.from(mine.value.content, "base64").toString()
-    const noted = !text.includes("\uFFFD") && withNote(text, upstream)
-    if (!noted) return []
-    return [
-      { path: mine.value.path, content: noted },
-      { path: `.autofork/${NOTE}/PATCH.md`, content: noteDoc(upstream.split("/")[1]!) },
-      { path: `.autofork/${NOTE}/${NOTE}.patch`, content: diff(mine.value.path, text, noted) },
-    ]
-  })
+const readmeNote = (token: GitHub.Token, fork: string, branch: string, upstream: string) =>
+  Effect.all([readme(token, fork, branch), readme(token, upstream)], { concurrency: 2 }).pipe(
+    Effect.map(([mine, theirs]) => {
+      const name = upstream.split("/")[1]!
+      const text = Buffer.from(mine.content, "base64").toString()
+      return mine.sha === theirs.sha && /^readme\.md$/i.test(mine.path) && text.trim() && !text.includes("autofork.com")
+        ? [
+            {
+              path: `.autofork/${NOTE}/PATCH.md`,
+              content: `One line under the README's title says this is a personal fork of ${name} that updates itself with autofork, linking ${name}, https://autofork.com and this fork's \`.autofork/\` folder. The rest of the README stays as upstream wrote it.
+
+To drop the line, delete it from the README and delete this folder, in the same commit.
+`,
+            },
+          ]
+        : []
+    }),
+    Effect.orElseSucceed(() => []),
+  )
 
 const listDir = (token: GitHub.Token, owner: string, name: string, path: string) =>
   GitHub.request<{ name: string; type: string; size: number; sha: string }[]>(token, "GET", `/repos/${owner}/${name}/contents/${path}`).pipe(
@@ -303,7 +310,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
           { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
-          ...(control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, owner, name, branch, upstream)),
+          ...(!repo.parent || control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, `${owner}/${name}`, branch, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
       }
@@ -346,6 +353,7 @@ const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
 const synced = (message: string, name: (id: string) => string) =>
   message.split("\n").flatMap((line): string[] => {
     let match: RegExpMatchArray | null
+    if (line === `built ${NOTE}` || line === `healed ${NOTE}` || line.startsWith(`upstream has ${NOTE}:`)) return []
     if ((match = line.match(/^built (\S+)$/))) return [`Built "${name(match[1]!)}"`]
     if ((match = line.match(/^healed (\S+)$/))) return [`Rebuilt "${name(match[1]!)}" on the new release`]
     if ((match = line.match(/^upstream has (\S+): (.+)$/))) return [`Paused "${name(match[1]!)}": ${match[2]}`]
