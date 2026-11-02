@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
-import type { MutationCtx } from "./_generated/server"
+import type { ActionCtx, MutationCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { cronLine } from "../shared/settings"
 import { dropToken, file, GitHubError, installationToken, repoInstallation, request } from "./github"
@@ -80,11 +80,39 @@ export const refresh = internalAction({
 })
 
 /* An install can list thousands of repos, more than one function may schedule, so they're refreshed 100 at a time, a quarter second apart */
-export const refreshAll = internalMutation({
+export const refreshAll = internalAction({
+  args: { names: v.array(v.string()), installationId: v.optional(v.number()) },
+  handler: async (ctx, { names, installationId }) => {
+    const wanted = installationId === undefined ? names : await withConfig(ctx, installationId, names)
+    for (const [index, name] of wanted.slice(0, 100).entries()) await ctx.scheduler.runAfter(index * 250, internal.forks.refresh, { name })
+    if (wanted.length > 100) await ctx.scheduler.runAfter(25_000, internal.forks.refreshAll, { names: wanted.slice(100) })
+  },
+})
+
+/* Most repos on an install aren't autofork forks: one GraphQL query per 50 finds the ones with a config, and linked ones are always kept so they can be unlinked */
+const withConfig = async (ctx: ActionCtx, installationId: number, names: string[]) => {
+  const linked = new Set(await ctx.runQuery(internal.forks.linkedOf, { names }))
+  const token = await installationToken(installationId)
+  const kept: string[] = []
+  for (let at = 0; at < names.length; at += 50) {
+    const chunk = names.slice(at, at + 50)
+    const query = `{ ${chunk
+      .map((name, index) => {
+        const [owner, repo] = name.split("/")
+        return `r${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { object(expression: "HEAD:.autofork/config.json") { __typename } }`
+      })
+      .join("\n")} }`
+    const found = await request<{ data?: Record<string, { object: unknown } | null> | null }>(token, "POST", "graphql", { query }).catch(() => undefined)
+    kept.push(...chunk.filter((name, index) => linked.has(name.toLowerCase()) || !found?.body.data || found.body.data[`r${index}`]?.object))
+  }
+  return kept
+}
+
+export const linkedOf = internalQuery({
   args: { names: v.array(v.string()) },
   handler: async (ctx, { names }) => {
-    for (const [index, name] of names.slice(0, 100).entries()) await ctx.scheduler.runAfter(index * 250, internal.forks.refresh, { name })
-    if (names.length > 100) await ctx.scheduler.runAfter(25_000, internal.forks.refreshAll, { names: names.slice(100) })
+    const rows = await Promise.all(names.map((name) => ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name.toLowerCase())).first()))
+    return rows.flatMap((row) => (row ? [row.name] : []))
   },
 })
 

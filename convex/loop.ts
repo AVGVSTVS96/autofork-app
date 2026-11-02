@@ -215,7 +215,9 @@ export const tick = internalAction({
         } catch (error) {
           console.warn(`couldn't start ${fork.name}: ${error}`)
           if (error instanceof GitHubError && error.status === 401) dropToken(fork.installationId)
-          if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429 || error.status === 401) return
+          /* GitHub may have started a run it didn't answer for in time, so a timeout keeps the mark and leaves the rest to GitHub's schedule */
+          const timedOut = error instanceof Error && error.name === "TimeoutError"
+          if (!timedOut && (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429 || error.status === 401)) return
           await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {})
         }
         await ctx.runMutation(internal.loop.seen, { forks: [{ id: fork.id, watch, seen: now }] })

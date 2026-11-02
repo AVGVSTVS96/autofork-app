@@ -31,18 +31,23 @@ export const LinkRoute = () => {
   useTitle(`Link ${owner}/${name} · autofork`)
   const me = useAtomValue(client.me)
   const [state, setState] = useState<Linked | null>(null)
+  const [stopped, setStopped] = useState(false)
 
   useEffect(() => {
     let stop = false
     let timer: ReturnType<typeof setTimeout>
     let wait = 3000
+    /* Like `autofork link`, the page gives up after 10 minutes; the install webhook still links the fork */
+    const until = Date.now() + 600_000
     const poll = async () => {
       if (document.hidden) return void (timer = setTimeout(poll, 3000))
       const next = await check(owner, name)
       if (stop) return
       setState((before) => ("checked" in next && next.checked === false ? (before ?? next) : next))
       wait = Math.min(wait * 1.5, 30_000)
-      if ("linked" in next ? !next.linked : !next.final) timer = setTimeout(poll, wait)
+      const waiting = "linked" in next ? !next.linked && next.why !== "not on GitHub" : !next.final
+      if (waiting && Date.now() < until) timer = setTimeout(poll, wait)
+      else if (waiting) setStopped(true)
     }
     void poll()
     return () => {
@@ -83,6 +88,7 @@ export const LinkRoute = () => {
               <p className="fine">If autofork is already installed on {name}, check the two files below.</p>
             ) : null}
             {error ? <p className="bad">{error}</p> : null}
+            {stopped ? <p className="fine">Stopped checking after 10 minutes. Reload the page to check again.</p> : null}
             <p className="fine">Push your fork's .autofork/config.json and .github/workflows/autofork.yml first. To unlink, remove the app from the repo on GitHub.</p>
           </>
         )}

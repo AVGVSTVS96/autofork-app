@@ -121,17 +121,17 @@ http.route({
     if (!(await signed(body, request.headers.get("x-hub-signature-256")))) return json({ error: "bad signature" }, 401)
     const event = request.headers.get("x-github-event")
     const hook = JSON.parse(body) as Hook
-    const refresh = async (repos: { full_name: string }[] = []) => {
-      if (repos.length) await ctx.scheduler.runAfter(0, internal.forks.refreshAll, { names: repos.map((repo) => repo.full_name) })
+    const refresh = async (repos: { full_name: string }[] = [], installationId?: number) => {
+      if (repos.length) await ctx.scheduler.runAfter(0, internal.forks.refreshAll, { names: repos.map((repo) => repo.full_name), installationId })
     }
     if (event === "installation" && hook.action === "deleted" && hook.installation)
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
-    else if (event === "installation") await refresh(hook.repositories)
+    else if (event === "installation") await refresh(hook.repositories, hook.installation?.id)
     else if (event === "installation_repositories") {
       /* Narrowing an "all repositories" install lists nothing as removed, so every fork on it is checked again */
       const narrowed = hook.installation && hook.repository_selection === "selected" && !hook.repositories_removed?.length
       const linked = narrowed ? await ctx.runQuery(internal.forks.namesOn, { installationId: hook.installation!.id }) : []
-      await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? []), ...linked])
+      await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? []), ...linked], hook.installation?.id)
     }
     else if (event === "push" && hook.repository && hook.ref === `refs/heads/${hook.repository.default_branch}` && touchesSettings(hook.commits))
       await refresh([hook.repository])
