@@ -68,7 +68,7 @@ const pool = async <A>(items: A[], run: (item: A) => Promise<void>) => {
   const queue = [...items]
   await Promise.all(
     Array.from({ length: AT_ONCE }, async () => {
-      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await run(item)
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await run(item).catch((error) => console.warn(`loop: ${error}`))
     }),
   )
 }
@@ -89,7 +89,7 @@ const read = async (asks: Map<number, Set<string>>) => {
         "graphql",
         { query },
       )
-      const failed = new Set((body.errors ?? []).map((error) => error.path?.[0]))
+      const failed = new Set((body.errors ?? []).filter((error) => error.path?.length === 1).map((error) => error.path?.[0]))
       if (body.data)
         keys.forEach((key, index) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)

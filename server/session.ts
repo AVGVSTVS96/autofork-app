@@ -81,7 +81,7 @@ export const write = (session: Session) =>
     const { account, ...rest } = session
     const { main, saved } = yield* fromCookies
     const { account: _, ...restBefore } = main
-    const next: Saved = account ? { account, user: rest.user?.id } : {}
+    const next: Saved = account ? { account, user: rest.user?.id ?? saved.user } : {}
     const changes: [string, string][] = []
     if (JSON.stringify(rest) !== JSON.stringify(restBefore)) changes.push([COOKIE, yield* encrypt(rest)])
     if (JSON.stringify(next) !== JSON.stringify(saved)) changes.push([ACCOUNT, yield* encrypt(next)])

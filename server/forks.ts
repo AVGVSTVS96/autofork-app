@@ -600,8 +600,8 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
     const now = readSettings(config, workflow)
     if (workflow && cronLines(workflow) > 1 && wanted.cron !== now.cron)
       return yield* new Problem({ message: "This fork's autofork.yml has more than one schedule. Change it in the repo." })
-    if (wanted.cron !== null && wanted.cron !== now.cron && !/^[\d*/,-]+( [\d*/,-]+){4}$/.test(wanted.cron))
-      return yield* new Problem({ message: "That isn't a cron schedule." })
+    if (wanted.cron !== null && wanted.cron !== now.cron && !Object.values(EVERY).includes(wanted.cron as never))
+      return yield* new Problem({ message: "Pick one of the schedules, or set another in autofork.yml." })
     const files: GitHub.File[] = []
     const unchanged = now.follow === wanted.follow.trim() && JSON.stringify(now.limits) === JSON.stringify(wanted.limits)
     const nextConfig = unchanged ? config : withSettings(config, wanted)

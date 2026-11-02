@@ -13,6 +13,7 @@ export default defineSchema({
     cron: v.union(v.string(), v.null()),
     seen: v.optional(v.string()),
     readAt: v.optional(v.number()),
+    open: v.optional(v.boolean()),
   })
     .index("repoId", ["repoId"])
     .index("name", ["name"])

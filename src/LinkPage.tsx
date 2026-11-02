@@ -7,7 +7,7 @@ import { Nav, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/link/$owner/$name")
 
-type Linked = { linked: boolean; cron: string | null; why?: keyof typeof WHY } | { error: string; final?: boolean }
+type Linked = { linked: boolean; cron: string | null; why?: keyof typeof WHY; checked?: boolean } | { error: string; final?: boolean }
 
 const WHY = {
   "not installed": null,
@@ -40,7 +40,7 @@ export const LinkRoute = () => {
       if (document.hidden) return void (timer = setTimeout(poll, 3000))
       const next = await check(owner, name)
       if (stop) return
-      setState(next)
+      setState((before) => ("checked" in next && next.checked === false && before && "why" in before ? { ...next, why: before.why } : next))
       wait = Math.min(wait * 1.5, 30_000)
       if ("linked" in next ? !next.linked : !next.final) timer = setTimeout(poll, wait)
     }

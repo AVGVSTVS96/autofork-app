@@ -84,10 +84,13 @@ http.route({
     if (typeof owner !== "string" || typeof name !== "string" || !REPO_PART.test(owner) || !REPO_PART.test(name))
       return json({ error: "need owner and name" }, 400)
     const repo = `${owner}/${name}`.toLowerCase()
+    /* Anyone can ask, so a private repo's answer is only yes or no */
     const row = await ctx.runQuery(internal.forks.byName, { name: repo })
-    if (row) return json({ linked: true, cron: row.cron })
-    if (await ctx.runMutation(internal.forks.mayCheck, { name: repo })) return json(await ctx.runAction(internal.forks.refresh, { name: repo }))
-    return json({ linked: false, cron: null })
+    if (row) return json({ linked: true, cron: row.open ? row.cron : null })
+    if (!(await ctx.runMutation(internal.forks.mayCheck, { name: repo }))) return json({ linked: false, cron: null, checked: false })
+    const found = await ctx.runAction(internal.forks.refresh, { name: repo }).catch(() => null)
+    if (!found) return json({ error: "GitHub didn't answer; try again in a minute" }, 502)
+    return json(found.open ? { linked: found.linked, cron: found.cron, ...("why" in found ? { why: found.why } : {}) } : { linked: found.linked, cron: null })
   }),
 })
 

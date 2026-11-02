@@ -20,7 +20,7 @@ export const watchFor = (upstream: string, given: string | undefined) => {
   return `${repo} releases`
 }
 
-type Linked = { linked: true; cron: string | null } | { linked: false; cron: null; why: "not installed" | "no config" | "no workflow" | "not on GitHub" }
+type Linked = { linked: true; cron: string | null; open: boolean } | { linked: false; cron: null; open: boolean; why: "not installed" | "no config" | "no workflow" | "not on GitHub" }
 
 export const refresh = internalAction({
   args: { name: v.string() },
@@ -31,10 +31,11 @@ export const refresh = internalAction({
     const installationId = await repoInstallation(owner, repo)
     if (!installationId) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null, why: "not installed" }
+      return { linked: false, cron: null, open: false, why: "not installed" }
     }
     const token = await installationToken(installationId)
-    const { body: found } = await request<{ id: number; full_name: string; default_branch: string }>(token, "GET", `repos/${name}`)
+    const { body: found } = await request<{ id: number; full_name: string; default_branch: string; private: boolean }>(token, "GET", `repos/${name}`)
+    const open = !found.private
     const [config, workflow] = await Promise.all([
       file(token, found.full_name, ".autofork/config.json", found.default_branch),
       file(token, found.full_name, ".github/workflows/autofork.yml", found.default_branch),
@@ -45,13 +46,13 @@ export const refresh = internalAction({
     } catch {}
     if (typeof settings?.upstream !== "string" || workflow === null) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null, why: typeof settings?.upstream === "string" ? "no workflow" : "no config" }
+      return { linked: false, cron: null, open, why: typeof settings?.upstream === "string" ? "no workflow" : "no config" }
     }
     const follow = typeof settings.follow === "string" ? settings.follow : undefined
     const watch = watchFor(settings.upstream, follow)
     if (!watch) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null, why: "not on GitHub" }
+      return { linked: false, cron: null, open, why: "not on GitHub" }
     }
     const cron = cronLine(workflow)
     await ctx.runMutation(internal.forks.save, {
@@ -64,8 +65,9 @@ export const refresh = internalAction({
       watch,
       cron,
       readAt,
+      open,
     })
-    return { linked: true, cron }
+    return { linked: true, cron, open }
   },
 })
 
@@ -80,17 +82,21 @@ export const save = internalMutation({
     watch: v.union(v.string(), v.null()),
     cron: v.union(v.string(), v.null()),
     readAt: v.number(),
+    open: v.boolean(),
   },
   /* Refreshes run side by side, so the one that read GitHub last wins, whichever finishes last */
   handler: async (ctx, fork) => {
-    for (const stale of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", fork.name)).collect())
-      if (stale.repoId !== fork.repoId) await ctx.db.delete(stale._id)
     const row = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", fork.repoId)).unique()
     if (row && (row.readAt ?? 0) > fork.readAt) return
     const gone = await ctx.db.query("gone").withIndex("name", (q) => q.eq("name", fork.name)).unique()
     if (gone && gone.at > fork.readAt) return
     if (gone) await ctx.db.delete(gone._id)
-    if (row) await ctx.db.replace(row._id, { ...fork, ...(row.watch === fork.watch && row.seen ? { seen: row.seen } : {}) })
+    for (const stale of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", fork.name)).collect())
+      if (stale.repoId !== fork.repoId) {
+        if ((stale.readAt ?? 0) > fork.readAt) return
+        await ctx.db.delete(stale._id)
+      }
+    if (row) await ctx.db.replace(row._id, { ...fork, ...(row.watch === fork.watch && row.seen !== undefined ? { seen: row.seen } : {}) })
     else await ctx.db.insert("forks", fork)
   },
 })
