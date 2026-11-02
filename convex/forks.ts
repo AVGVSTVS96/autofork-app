@@ -79,6 +79,15 @@ export const refresh = internalAction({
   },
 })
 
+/* An install can list thousands of repos, more than one function may schedule, so they're refreshed 100 at a time, a quarter second apart */
+export const refreshAll = internalMutation({
+  args: { names: v.array(v.string()) },
+  handler: async (ctx, { names }) => {
+    for (const [index, name] of names.slice(0, 100).entries()) await ctx.scheduler.runAfter(index * 250, internal.forks.refresh, { name })
+    if (names.length > 100) await ctx.scheduler.runAfter(25_000, internal.forks.refreshAll, { names: names.slice(100) })
+  },
+})
+
 export const save = internalMutation({
   args: {
     repoId: v.number(),

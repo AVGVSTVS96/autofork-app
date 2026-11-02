@@ -121,8 +121,9 @@ http.route({
     if (!(await signed(body, request.headers.get("x-hub-signature-256")))) return json({ error: "bad signature" }, 401)
     const event = request.headers.get("x-github-event")
     const hook = JSON.parse(body) as Hook
-    const refresh = (repos: { full_name: string }[] = []) =>
-      Promise.all(repos.map((repo, index) => ctx.scheduler.runAfter(index * 250, internal.forks.refresh, { name: repo.full_name })))
+    const refresh = async (repos: { full_name: string }[] = []) => {
+      if (repos.length) await ctx.scheduler.runAfter(0, internal.forks.refreshAll, { names: repos.map((repo) => repo.full_name) })
+    }
     if (event === "installation" && hook.action === "deleted" && hook.installation)
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)

@@ -40,7 +40,7 @@ export const LinkRoute = () => {
       if (document.hidden) return void (timer = setTimeout(poll, 3000))
       const next = await check(owner, name)
       if (stop) return
-      setState((before) => ("checked" in next && next.checked === false && before && "why" in before ? { ...next, why: before.why } : next))
+      setState((before) => ("checked" in next && next.checked === false ? (before ?? next) : next))
       wait = Math.min(wait * 1.5, 30_000)
       if ("linked" in next ? !next.linked : !next.final) timer = setTimeout(poll, wait)
     }
