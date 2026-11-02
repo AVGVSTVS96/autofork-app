@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
+import type { ActionCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { GitHubError, installationToken, request } from "./github"
 
@@ -13,14 +14,23 @@ type Watched = {
 }
 
 export const watching = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const watches = new Map<string, Watched[]>()
-    for (const { _id, name, branch, installationId, seen, watch } of await ctx.db.query("forks").collect())
-      if (watch) watches.set(watch, [...(watches.get(watch) ?? []), { id: _id, name, branch, installationId, seen: seen ?? null }])
-    return [...watches].map(([key, forks]) => ({ key, forks }))
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { cursor }) => {
+    const { page, continueCursor, isDone } = await ctx.db.query("forks").paginate({ cursor, numItems: 1000 })
+    const forks = page.flatMap(({ _id, name, branch, installationId, seen, watch }) => (watch ? [{ watch, id: _id, name, branch, installationId, seen: seen ?? null }] : []))
+    return { forks, cursor: continueCursor, done: isDone }
   },
 })
+
+const allWatches = async (ctx: ActionCtx) => {
+  const watches = new Map<string, Watched[]>()
+  for (let cursor: string | null = null, done = false; !done; ) {
+    const page: { forks: (Watched & { watch: string })[]; cursor: string; done: boolean } = await ctx.runQuery(internal.loop.watching, { cursor })
+    for (const { watch, ...fork } of page.forks) watches.set(watch, [...(watches.get(watch) ?? []), fork])
+    ;({ cursor, done } = page)
+  }
+  return [...watches].map(([key, forks]) => ({ key, forks }))
+}
 
 export const seen = internalMutation({
   args: { forks: v.array(v.object({ id: v.id("forks"), watch: v.string(), seen: v.string() })) },
@@ -110,7 +120,7 @@ const ask = (asks: Map<number, Set<string>>, installationId: number, key: string
 export const tick = internalAction({
   args: {},
   handler: async (ctx) => {
-    const watches = await ctx.runQuery(internal.loop.watching, {})
+    const watches = await allWatches(ctx)
     const first = new Map<number, Set<string>>()
     const reader = new Map(watches.map((watch) => [watch.key, Math.min(...watch.forks.map((fork) => fork.installationId))]))
     for (const [key, installationId] of reader) ask(first, installationId, key)

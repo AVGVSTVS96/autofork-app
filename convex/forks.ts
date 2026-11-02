@@ -120,10 +120,8 @@ export const unlink = internalMutation({
 export const unlinkInstallation = internalMutation({
   args: { installationId: v.number() },
   handler: async (ctx, { installationId }) => {
-    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) {
+    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect())
       await ctx.db.delete(row._id)
-      await forget(ctx, row.name, Date.now())
-    }
   },
 })
 

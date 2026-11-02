@@ -566,8 +566,8 @@ export const mine = (user: User) =>
     })),
   )
 
-const contents = (token: string, owner: string, name: string, path: string, branch: string) =>
-  GitHub.text(token, `/repos/${owner}/${name}/contents/${path}?ref=${branch}`).pipe(
+const contents = (token: string, owner: string, name: string, path: string, ref: string) =>
+  GitHub.text(token, `/repos/${owner}/${name}/contents/${path}?ref=${ref}`).pipe(
     Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
     Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
   )
@@ -576,12 +576,13 @@ const pushable = (user: User, owner: string, name: string) =>
   Effect.gen(function* () {
     const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
     if (!repo.permissions?.push) return yield* new Problem({ message: "That fork isn't yours." })
+    const head = yield* GitHub.head(user.token, owner, name, repo.default_branch)
     const [config, workflow] = yield* Effect.all(
-      [contents(user.token, owner, name, ".autofork/config.json", repo.default_branch), contents(user.token, owner, name, ".github/workflows/autofork.yml", repo.default_branch)],
+      [contents(user.token, owner, name, ".autofork/config.json", head), contents(user.token, owner, name, ".github/workflows/autofork.yml", head)],
       { concurrency: 2 },
     )
     if (config === null) return yield* new Problem({ message: `${owner}/${name} has no .autofork/config.json.` })
-    return { repo, config, workflow }
+    return { repo, head, config, workflow }
   })
 
 export const settings = (user: User, owner: string, name: string) =>
@@ -595,7 +596,7 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
     if (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds)) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
     if (rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
     if (rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
-    const { repo, config, workflow } = yield* pushable(user, owner, name)
+    const { repo, head, config, workflow } = yield* pushable(user, owner, name)
     if (!parses(config)) return yield* new Problem({ message: `${owner}/${name}'s .autofork/config.json isn't valid JSON. Fix it in the repo first.` })
     const now = readSettings(config, workflow)
     if (workflow && cronLines(workflow) > 1 && wanted.cron !== now.cron)
@@ -611,21 +612,32 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       files.push({ path: ".github/workflows/autofork.yml", content: withCron(workflow, wanted.cron) })
     }
     if (files.length)
-      yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files).pipe(
+      yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files, head).pipe(
         Effect.catchIf(
-          (error) => error.status === 403 || error.status === 404,
-          problem(`Install autofork on ${owner}/${name} to change its settings here, or edit .autofork/config.json in the repo.`),
+          (error) => error.status === 403 || error.status === 404 || error.status === 422,
+          (error) =>
+            Effect.fail(
+              new Problem({
+                message:
+                  error.status === 422
+                    ? `${owner}/${name} changed while saving. Reload and save again.`
+                    : `Install autofork on ${owner}/${name} to change its settings here, or edit .autofork/config.json in the repo.`,
+              }),
+            ),
         ),
       )
     return readSettings(nextConfig, files.some((file) => file.path.endsWith("autofork.yml")) ? withCron(workflow!, wanted.cron!) : workflow)
   })
 
+/* The user's token only sees private repos the App is already on, so a private fork gets its owner's install page without the fork ticked */
 export const installLink = (user: User, owner: string, name: string, slug: string) =>
-  GitHub.request<GitHubRepo & { id: number; owner: { id: number } }>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
-    Effect.map((repo) => {
+  GitHub.request<{ id: number; owner: { id: number } }>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
+    Effect.map((repo): { ownerId: number; repoId?: number } => ({ ownerId: repo.owner.id, repoId: repo.id })),
+    Effect.catchIf(GitHub.missing, () => Effect.map(GitHub.request<{ id: number }>(user.token, "GET", `/users/${owner}`), (found): { ownerId: number; repoId?: number } => ({ ownerId: found.id }))),
+    Effect.map(({ ownerId, repoId }) => {
       const url = new URL(`https://github.com/apps/${slug}/installations/new/permissions`)
-      url.searchParams.set("suggested_target_id", String(repo.owner.id))
-      url.searchParams.append("repository_ids[]", String(repo.id))
+      url.searchParams.set("suggested_target_id", String(ownerId))
+      if (repoId) url.searchParams.append("repository_ids[]", String(repoId))
       return url
     }),
   )

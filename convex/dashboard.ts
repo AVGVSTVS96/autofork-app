@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { internal } from "./_generated/api"
 import { internalMutation, query } from "./_generated/server"
 import { thisMonth } from "./ledger"
 
@@ -22,13 +23,16 @@ const DAY = 86_400_000
 
 /* A grant GitHub hasn't confirmed in a day goes, so losing push access ends spend access even if that person never comes back */
 export const prune = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    for (const row of await ctx.db.query("access").collect()) {
-      const fresh = row.repos.filter((repo) => (repo.at ?? 0) > Date.now() - DAY)
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor = null }) => {
+    const cutoff = Date.now() - DAY
+    const { page, continueCursor, isDone } = await ctx.db.query("access").paginate({ cursor, numItems: 100 })
+    for (const row of page) {
+      const fresh = row.repos.filter((repo) => (repo.at ?? 0) > cutoff)
       if (fresh.length !== row.repos.length) await ctx.db.patch(row._id, { repos: fresh })
     }
-    for (const old of await ctx.db.query("gone").collect()) if (old.at < Date.now() - DAY) await ctx.db.delete(old._id)
+    for (const old of await ctx.db.query("gone").withIndex("at", (q) => q.lt("at", cutoff)).take(500)) await ctx.db.delete(old._id)
+    if (!isDone) await ctx.scheduler.runAfter(0, internal.dashboard.prune, { cursor: continueCursor })
   },
 })
 

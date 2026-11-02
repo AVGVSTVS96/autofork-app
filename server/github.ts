@@ -234,10 +234,14 @@ export const deleteSecret = (token: string, owner: string, name: string, secret:
 /* A null content deletes the file */
 export type File = { readonly path: string; readonly content: string | null }
 
-export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>) =>
+export const head = (token: string, owner: string, name: string, branch: string) =>
+  Effect.map(request<{ object: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`), (ref) => ref.object.sha)
+
+/* Given `on`, the commit goes on top of that commit, and fails with a 422 if the branch has moved since */
+export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>, on?: string) =>
   Effect.gen(function* () {
-    const ref = yield* request<{ object: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`)
-    const parent = yield* request<{ tree: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/commits/${ref.object.sha}`)
+    const sha = on ?? (yield* head(token, owner, name, branch))
+    const parent = yield* request<{ tree: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/commits/${sha}`)
     const tree = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/trees`, {
       base_tree: parent.tree.sha,
       tree: files.map(({ path, content }) => ({ path, mode: "100644", type: "blob", ...(content === null ? { sha: null } : { content }) })),
@@ -245,7 +249,7 @@ export const commit = (token: string, owner: string, name: string, branch: strin
     const created = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/commits`, {
       message,
       tree: tree.sha,
-      parents: [ref.object.sha],
+      parents: [sha],
     })
     yield* request(token, "PATCH", `/repos/${owner}/${name}/git/refs/heads/${branch}`, { sha: created.sha })
     return created.sha

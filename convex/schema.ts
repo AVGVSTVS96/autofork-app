@@ -35,5 +35,5 @@ export default defineSchema({
     endedAt: v.union(v.number(), v.null()),
   }).index("repoId", ["repoId"]),
   access: defineTable({ user: v.string(), repos: v.array(v.object({ id: v.number(), name: v.string(), at: v.optional(v.number()) })) }).index("user", ["user"]),
-  gone: defineTable({ name: v.string(), at: v.number() }).index("name", ["name"]),
+  gone: defineTable({ name: v.string(), at: v.number() }).index("name", ["name"]).index("at", ["at"]),
 })

@@ -102,7 +102,14 @@ type Hook = {
   repositories_removed?: { full_name: string }[]
   ref?: string
   repository?: { full_name: string; default_branch: string }
+  commits?: { added: string[]; removed: string[]; modified: string[] }[]
 }
+
+const SETTINGS = [".autofork/config.json", ".github/workflows/autofork.yml"]
+
+/* GitHub lists at most 2048 commits a push, and none for a push that only moves the branch back */
+const touchesSettings = (commits: Hook["commits"] = []) =>
+  commits.length === 0 || commits.length >= 2048 || commits.some((each) => [...each.added, ...each.removed, ...each.modified].some((path) => SETTINGS.includes(path)))
 
 http.route({
   path: "/github/hook",
@@ -118,7 +125,8 @@ http.route({
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)
     else if (event === "installation_repositories") await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? [])])
-    else if (event === "push" && hook.repository && hook.ref === `refs/heads/${hook.repository.default_branch}`) await refresh([hook.repository])
+    else if (event === "push" && hook.repository && hook.ref === `refs/heads/${hook.repository.default_branch}` && touchesSettings(hook.commits))
+      await refresh([hook.repository])
     return new Response(null, { status: 204 })
   }),
 })
