@@ -446,6 +446,8 @@ export const status = (owner: string, name: string) =>
     const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${owner}/${name}`).pipe(
       Effect.catchIf(GitHub.missing, problem(`There's no fork at github.com/${owner}/${name}.`)),
     )
+    /* This page is public and cached, and the app's token can read private repos, so a private fork reads as missing */
+    if (repo.private) return yield* new Problem({ message: `There's no fork at github.com/${owner}/${name}.` })
     const control = yield* listDir(token, owner, name, ".autofork")
     const found = yield* Effect.forEach(
       control.filter((entry) => entry.type === "dir"),
