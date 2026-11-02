@@ -24,8 +24,15 @@ export const request = async <A = unknown>(token: string, method: string, path: 
   })
   if (response.status === 304) return { changed: false as const, etag: etag ?? null, body: undefined as A }
   const text = await response.text()
-  if (!response.ok) throw new GitHubError(response.status, `${method} ${path}: ${response.status} ${text.slice(0, 300)}`)
-  return { changed: true as const, etag: response.headers.get("etag"), body: (text ? JSON.parse(text) : undefined) as A }
+  const limited =
+    response.status === 403 && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after") || /rate limit/i.test(text))
+  const status = limited ? 429 : response.status
+  if (!response.ok) throw new GitHubError(status, `${method} ${path}: ${response.status} ${text.slice(0, 300)}`)
+  return {
+    changed: true as const,
+    etag: response.headers.get("etag"),
+    body: (text ? JSON.parse(text) : undefined) as A,
+  }
 }
 
 const base64url = (bytes: ArrayBuffer | Uint8Array) =>
@@ -34,16 +41,28 @@ const base64url = (bytes: ArrayBuffer | Uint8Array) =>
     .replace(/\//g, "_")
     .replace(/=+$/, "")
 
+const der = (tag: number, body: Uint8Array) => {
+  const n = body.length
+  return Uint8Array.from([tag, ...(n < 128 ? [n] : n < 256 ? [0x81, n] : [0x82, n >> 8, n & 255]), ...body])
+}
+
+const RSA_ENCRYPTION = [0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]
+
+/* GitHub downloads App keys as PKCS#1 ("RSA PRIVATE KEY"), which WebCrypto can't import until it's wrapped as PKCS#8 */
+const pkcs8 = (pem: string) => {
+  const bytes = Uint8Array.from(atob(pem.replace(/-----[^-]+-----|\s/g, "")), (c) => c.charCodeAt(0))
+  return pem.includes("RSA PRIVATE KEY") ? der(0x30, Uint8Array.from([0x02, 0x01, 0x00, ...RSA_ENCRYPTION, ...der(0x04, bytes)])) : bytes
+}
+
 let signer: Promise<CryptoKey> | undefined
 
 const key = () =>
-  (signer ??= crypto.subtle.importKey(
-    "pkcs8",
-    Uint8Array.from(atob(process.env.GITHUB_PRIVATE_KEY!.replace(/-----[^-]+-----|\s/g, "")), (c) => c.charCodeAt(0)),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  ))
+  (signer ??= crypto.subtle
+    .importKey("pkcs8", pkcs8(process.env.GITHUB_PRIVATE_KEY!), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])
+    .catch((error) => {
+      signer = undefined
+      throw error
+    }))
 
 const appJwt = async () => {
   const now = Math.floor(Date.now() / 1000)
@@ -68,7 +87,7 @@ export const repoInstallation = (owner: string, name: string) =>
 
 export const file = async (token: string, repo: string, path: string, ref?: string) => {
   try {
-    const { body } = await request<{ content: string }>(token, "GET", `repos/${repo}/contents/${path}${ref ? `?ref=${ref}` : ""}`)
+    const { body } = await request<{ content: string }>(token, "GET", `repos/${repo}/contents/${path}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`)
     return new TextDecoder().decode(Uint8Array.from(atob(body.content.replace(/\s/g, "")), (c) => c.charCodeAt(0)))
   } catch (error) {
     if (error instanceof GitHubError && error.status === 404) return null
@@ -84,5 +103,10 @@ export const signed = async (body: string, signature: string | null) => {
   ])
   const hex = signature.slice(7)
   if (!/^[0-9a-f]{64}$/.test(hex)) return false
-  return crypto.subtle.verify("HMAC", hmac, Uint8Array.from(hex.match(/../g)!, (byte) => parseInt(byte, 16)), new TextEncoder().encode(body))
+  return crypto.subtle.verify(
+    "HMAC",
+    hmac,
+    Uint8Array.from(hex.match(/../g)!, (byte) => parseInt(byte, 16)),
+    new TextEncoder().encode(body),
+  )
 }

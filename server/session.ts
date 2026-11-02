@@ -26,6 +26,7 @@ export type Session = {
 }
 
 const COOKIE = "autofork"
+const ACCOUNT = "autofork-account"
 const text = new TextEncoder()
 
 const aes = Effect.gen(function* () {
@@ -57,25 +58,28 @@ const decrypt = (cookie: string) =>
     return JSON.parse(new TextDecoder().decode(plain)) as Session
   }).pipe(Effect.orElseSucceed((): Session => ({})))
 
-export const read = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest
-  const cookie = request.cookies[COOKIE]
-  return cookie ? yield* decrypt(cookie) : ({} as Session)
+const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: "30 days" } as const
+
+const fromCookies = Effect.gen(function* () {
+  const { cookies } = yield* HttpServerRequest.HttpServerRequest
+  const main = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
+  const { account } = cookies[ACCOUNT] ? yield* decrypt(cookies[ACCOUNT]) : main
+  return { ...main, account }
 })
 
+export const read = fromCookies
+
+/* The WorkOS tokens live in their own cookie, and each cookie is only sent back when it changed, so a request that renews them and
+   one that changes something else can't put back each other's old copy */
 export const write = (session: Session) =>
   Effect.gen(function* () {
-    const value = yield* encrypt(session)
+    const { account, ...rest } = session
+    const { account: before, ...restBefore } = yield* fromCookies
+    const changes: [string, string][] = []
+    if (JSON.stringify(rest) !== JSON.stringify(restBefore)) changes.push([COOKIE, yield* encrypt(rest)])
+    if (JSON.stringify(account) !== JSON.stringify(before)) changes.push([ACCOUNT, yield* encrypt({ account })])
     yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-      Effect.succeed(
-        HttpServerResponse.setCookieUnsafe(response, COOKIE, value, {
-          httpOnly: true,
-          secure: true,
-          sameSite: "lax",
-          path: "/",
-          maxAge: "30 days",
-        }),
-      ),
+      Effect.succeed(changes.reduce((answer, [name, value]) => HttpServerResponse.setCookieUnsafe(answer, name, value, COOKIE_OPTIONS), response)),
     )
   })
 

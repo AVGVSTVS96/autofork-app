@@ -113,7 +113,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
         if (!user) return false
         const repo = yield* Forks.yours(user, params.owner, params.name)
         const { account } = yield* Session.read
-        if (repo && account) yield* allow(account.id, [{ id: repo.id, name: repo.name }], true)
+        if (account) yield* allow(account.id, [repo ?? { id: 0, name: `${params.owner}/${params.name}` }], repo ? "add" : "drop")
         return !!repo
       }),
     )
@@ -130,6 +130,8 @@ const origin = (request: HttpServerRequest.HttpServerRequest) => {
 
 const params = (request: HttpServerRequest.HttpServerRequest) => new URL(request.url, "http://x").searchParams
 
+const REPO_PART = /^(?!\.\.?$)[\w.-]+$/
+
 const safeBack = (back: string | null) => (back && /^\/(?![/\\])/.test(back) ? back : "/")
 
 const signIn = HttpRouter.add("GET", "/api/github/start", (request) =>
@@ -144,7 +146,7 @@ const finish = (session: Session.Session, back: string, state: string, user: Ses
   Effect.gen(function* () {
     const { appSlug } = yield* Env.Env
     if (!installed) {
-      yield* Session.write({ ...session, user, account })
+      yield* Session.write({ ...session, user, account, signIn: { state, back } })
       const install = new URL(`https://github.com/apps/${appSlug}/installations/new/permissions`)
       install.search = new URLSearchParams({ target_id: String(user.id), state }).toString()
       return HttpServerResponse.redirect(install)
@@ -186,7 +188,7 @@ const signedIn = (
     if (signed._tag === "None") return failed("GitHub didn't finish signing you in. Try again.")
     if ("verify" in signed.value) {
       yield* Session.write({ ...session, signIn: { ...signIn, verify: signed.value.verify.token } })
-      return HttpServerResponse.redirect(`/verify?email=${encodeURIComponent(signed.value.verify.email)}`)
+      return HttpServerResponse.redirect(`/verify?${new URLSearchParams({ email: signed.value.verify.email, back: signIn.back })}`)
     }
     const { user, access_token, refresh_token, oauth_tokens } = signed.value
     if (!oauth_tokens) return failed("GitHub didn't finish signing you in. Try again.")
@@ -200,7 +202,10 @@ const verifyEmail = HttpRouter.add("POST", "/api/auth/verify", (request) =>
     const { session, signIn, failed } = yield* pending
     if (!signIn?.verify) return failed("GitHub sign-in expired. Try again.")
     const form = new URLSearchParams(yield* request.text)
-    const again = () => HttpServerResponse.redirect(`/verify?${new URLSearchParams({ email: form.get("email") ?? "", error: "That code didn't work. Check the email and try again." })}`)
+    const again = () =>
+      HttpServerResponse.redirect(
+        `/verify?${new URLSearchParams({ email: form.get("email") ?? "", back: signIn.back, error: "That code didn't work, or it expired. Check the email, or start over." })}`,
+      )
     return yield* signedIn(session, signIn, again, WorkOS.withEmailCode(form.get("code")?.trim() ?? "", signIn.verify))
   }),
 )
@@ -228,7 +233,8 @@ const install = HttpRouter.add("GET", "/api/github/install", (request) =>
     const { appSlug } = yield* Env.Env
     const owner = params(request).get("owner") ?? ""
     const name = params(request).get("name") ?? ""
-    const back = `/link/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    if (!REPO_PART.test(owner) || !REPO_PART.test(name)) return HttpServerResponse.redirect("/")
+    const back = `/link/${owner}/${name}`
     const user = yield* Effect.option(GitHub.signedIn)
     const { account } = yield* Session.read
     if (user._tag === "None" || !account) return HttpServerResponse.redirect(`/api/github/start?back=${encodeURIComponent(back)}`)
@@ -236,7 +242,7 @@ const install = HttpRouter.add("GET", "/api/github/install", (request) =>
     if (url._tag === "None") return HttpServerResponse.redirect(`${back}?error=${encodeURIComponent(`Can't find github.com/${owner}/${name}.`)}`)
     const state = randomBytes(16).toString("base64url")
     url.value.searchParams.set("state", state)
-    yield* Session.update((session) => ({ ...session, signIn: { state, back } }))
+    yield* Session.update((session) => ({ ...session, user: user.value, signIn: { state, back } }))
     return HttpServerResponse.redirect(url.value)
   }),
 )
@@ -255,10 +261,10 @@ const convex = (path: string, body: unknown, secret: Redacted.Redacted<string>) 
     })
   }).pipe(Effect.catch((error) => Effect.logWarning(`convex ${path}: ${error}`)))
 
-const allow = (user: string, repos: { id: number; name: string }[], add = false) =>
+const allow = (user: string, repos: { id: number; name: string }[], mode: "replace" | "add" | "drop" = "replace") =>
   Effect.gen(function* () {
     const { serverSecret } = yield* Env.Env
-    yield* convex("/access", { user, repos, add }, serverSecret)
+    yield* convex("/access", { user, repos, mode }, serverSecret)
   })
 
 /* WorkOS spends a refresh token once, so requests that arrive together with the same cookie share one renewal */

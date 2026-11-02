@@ -177,7 +177,8 @@ type Tokens = Effect.Success<ReturnType<typeof oauth>>
 
 export const fromWorkOS = (github: { access_token: string; refresh_token?: string; expires_at?: number | string }): Tokens => {
   const at = typeof github.expires_at === "string" ? Date.parse(github.expires_at) : github.expires_at && github.expires_at < 1e12 ? github.expires_at * 1000 : github.expires_at
-  return { token: github.access_token, refresh: github.refresh_token ?? "", expires: at || Number.MAX_SAFE_INTEGER }
+  const refresh = github.refresh_token ?? ""
+  return { token: github.access_token, refresh, expires: Number.isFinite(at) && at ? at : refresh ? Date.now() + 8 * 3_600_000 : Number.MAX_SAFE_INTEGER }
 }
 
 /* GitHub rotates the refresh token each time it's spent, so requests that arrive together with the same
@@ -204,7 +205,7 @@ export const signedIn = Effect.gen(function* () {
   const tokens = yield* renew(user.refresh).pipe(
     Effect.catchIf(
       (error) => error.status === 401,
-      () => Effect.andThen(Session.update(({ user: _, ...rest }) => rest), Effect.fail(new SignedOut())),
+      () => Effect.andThen(Session.update(({ user: _, account: __, ...rest }) => rest), Effect.fail(new SignedOut())),
     ),
   )
   const fresh = { ...user, ...tokens }

@@ -2,11 +2,13 @@ import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import { Problem } from "../shared/api.ts"
-import { verifyOidc } from "../shared/oidc.ts"
+import { Refused, verifyOidc } from "../shared/oidc.ts"
 import * as GitHub from "./github.ts"
 
 const verify = (authorization: string | undefined) =>
-  Effect.tryPromise({ try: () => verifyOidc(authorization), catch: (error) => new Problem({ message: error instanceof Error ? error.message : "not allowed" }) })
+  Effect.tryPromise({ try: () => verifyOidc(authorization), catch: (error) => error }).pipe(
+    Effect.catch((error) => (error instanceof Refused ? Effect.fail(new Problem({ message: error.message })) : Effect.die(error))),
+  )
 const hiccups = {
   while: (error: GitHub.GitHubError) => error.status === 0 || error.status >= 500 || GitHub.busy(error),
   schedule: Schedule.exponential("1 second"),

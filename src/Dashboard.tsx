@@ -1,5 +1,5 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { Link } from "@tanstack/react-router"
+import { getRouteApi, Link } from "@tanstack/react-router"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { MyFork } from "../shared/api.ts"
 import * as client from "./client.ts"
@@ -7,6 +7,8 @@ import { repoIcon } from "./known.ts"
 import { Live, money, type Spend, useSpend } from "./live.tsx"
 import { Meter, SignInAgain } from "./Spend.tsx"
 import { Nav, Retry, useTitle } from "./ui.tsx"
+
+const route = getRouteApi("/forks")
 
 const Row = ({ fork, spend }: { fork: MyFork; spend: Spend | undefined }) => {
   const { limits } = fork.settings
@@ -43,7 +45,7 @@ const Forks = () => {
   if (!AsyncResult.isSuccess(mine)) return <p className="note wait">Loading your forks…</p>
   if (spend === null) return <SignInAgain back="/forks" />
   if (!mine.value.length) return <p className="note">Forks you make on autofork show up here, with what each one's rebuilds cost.</p>
-  const total = spend?.reduce((sum, fork) => sum + fork.spent, 0) ?? 0
+  const total = mine.value.reduce((sum, fork) => sum + (spend?.find((row) => row.repoId === fork.repoId)?.spent ?? 0), 0)
   return (
     <>
       <p className="facts">
@@ -62,6 +64,7 @@ export const Dashboard = () => {
   useTitle("Your forks · autofork")
   const me = useAtomValue(client.me)
   const signedOut = AsyncResult.isSuccess(me) && !me.value
+  const { error } = route.useSearch()
   return (
     <div className="page bare">
       <Nav />
@@ -69,6 +72,7 @@ export const Dashboard = () => {
         <header className="fork-head">
           <h1>Your forks</h1>
         </header>
+        {error ? <p className="bad">{error}</p> : null}
         {signedOut ? (
           <p className="note">
             <a className="btn primary" href="/api/github/start?back=/forks">

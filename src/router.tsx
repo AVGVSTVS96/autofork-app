@@ -25,7 +25,12 @@ const fork = createRoute({
   component: lazyRouteComponent(() => import("./ForkPage.tsx"), "ForkRoute"),
 })
 
-const forks = createRoute({ getParentRoute: () => root, path: "/forks", component: lazyRouteComponent(() => import("./Dashboard.tsx"), "Dashboard") })
+const forks = createRoute({
+  getParentRoute: () => root,
+  path: "/forks",
+  validateSearch: (search: Record<string, unknown>): { error?: string } => (typeof search.error === "string" ? { error: search.error } : {}),
+  component: lazyRouteComponent(() => import("./Dashboard.tsx"), "Dashboard"),
+})
 
 const link = createRoute({
   getParentRoute: () => root,
@@ -37,8 +42,9 @@ const link = createRoute({
 const verify = createRoute({
   getParentRoute: () => root,
   path: "/verify",
-  validateSearch: (search: Record<string, unknown>): { email?: string; error?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { email?: string; error?: string; back?: string } => ({
     ...(typeof search.email === "string" ? { email: search.email } : {}),
+    ...(typeof search.back === "string" && /^\/(?![/\\])/.test(search.back) ? { back: search.back } : {}),
     ...(typeof search.error === "string" ? { error: search.error } : {}),
   }),
   component: lazyRouteComponent(() => import("./Verify.tsx"), "VerifyRoute"),

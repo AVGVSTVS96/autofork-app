@@ -665,7 +665,7 @@ nav .links > :last-child { view-transition-name: me; }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   html { scroll-behavior: auto; }
-  .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
+  .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .meter i, .lineage * { transition: none !important; animation: none !important; }
   .wait:not(.item)::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick, .ask .chip, .spin, .fork > * { animation: none; }
   .menu, .account.open .menu { scale: none; translate: none; }
   .menu-sk { animation: none; }

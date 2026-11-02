@@ -10,7 +10,12 @@ import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, Retr
 
 const route = getRouteApi("/$owner/$name")
 
-const Yours = lazy(() => import("./Yours.tsx").then((module) => ({ default: module.Yours })))
+const Yours = lazy(() =>
+  import("./Yours.tsx").then(
+    (module) => ({ default: module.Yours }),
+    () => ({ default: (_: { owner: string; name: string }) => <></> }),
+  ),
+)
 
 export const ForkRoute = () => {
   const { owner, name } = route.useParams()

@@ -7,11 +7,15 @@ import { Nav, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/link/$owner/$name")
 
-type Linked = { linked: boolean; cron: string | null } | { error: string }
+type Linked = { linked: boolean; cron: string | null } | { error: string; final?: boolean }
 
 const check = async (owner: string, name: string): Promise<Linked> => {
-  const response = await fetch("/api/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner, name }) })
-  return response.ok ? response.json() : { error: "Couldn't reach autofork. Try again in a moment." }
+  try {
+    const response = await fetch("/api/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner, name }) })
+    if (response.ok) return await response.json()
+    if (response.status === 400) return { error: "That isn't a GitHub repository name.", final: true }
+  } catch {}
+  return { error: "Couldn't reach autofork. Trying again…" }
 }
 
 export const LinkRoute = () => {
@@ -28,7 +32,7 @@ export const LinkRoute = () => {
       const next = await check(owner, name)
       if (stop) return
       setState(next)
-      if (!("linked" in next) || !next.linked) timer = setTimeout(poll, 3000)
+      if ("linked" in next ? !next.linked : !next.final) timer = setTimeout(poll, 3000)
     }
     void poll()
     return () => {
@@ -65,7 +69,7 @@ export const LinkRoute = () => {
             </p>
             {state && "error" in state ? <p className="bad">{state.error}</p> : null}
             {error ? <p className="bad">{error}</p> : null}
-            <p className="fine">Push your fork's .autofork/config.json first. To unlink, remove the app from the repo on GitHub.</p>
+            <p className="fine">Push your fork's .autofork/config.json and .github/workflows/autofork.yml first. To unlink, remove the app from the repo on GitHub.</p>
           </>
         )}
       </main>

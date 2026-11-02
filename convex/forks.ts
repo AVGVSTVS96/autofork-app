@@ -4,10 +4,12 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { cronLine } from "../shared/settings"
 import { file, installationToken, repoInstallation, request } from "./github"
 
-const repoOf = (upstream: string) => upstream.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?$/)?.[1] ?? null
+const repoOf = (upstream: string) =>
+  upstream.trim().match(/^(?:(?:https?:\/\/)?(?:www\.)?github\.com[/:]|git@github\.com:)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/i)?.[1]?.toLowerCase() ?? null
 
-export const watchFor = (upstream: string, follow: string | undefined) => {
+export const watchFor = (upstream: string, given: string | undefined) => {
   const repo = repoOf(upstream)
+  const follow = given?.trim()
   if (!repo) return null
   if (follow?.includes("*")) return `${repo} channel`
   if (follow && follow !== "releases") return `${repo} branch ${follow}`
@@ -39,6 +41,11 @@ export const refresh = internalAction({
       return { linked: false, cron: null }
     }
     const follow = typeof settings.follow === "string" ? settings.follow : undefined
+    const watch = watchFor(settings.upstream, follow)
+    if (!watch) {
+      await ctx.runMutation(internal.forks.unlink, { name })
+      return { linked: false, cron: null }
+    }
     const cron = cronLine(workflow)
     await ctx.runMutation(internal.forks.save, {
       repoId: found.id,
@@ -47,7 +54,7 @@ export const refresh = internalAction({
       installationId,
       upstream: settings.upstream,
       follow: follow ?? "releases",
-      watch: watchFor(settings.upstream, follow),
+      watch,
       cron,
     })
     return { linked: true, cron }
@@ -93,14 +100,15 @@ export const byName = internalQuery({
   handler: (ctx, { name }) => ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).unique(),
 })
 
-/* /api/link is open to anyone and polled, so a fork with no row is checked against GitHub at most every 30 seconds */
+/* /api/link is open to anyone and polled, so GitHub is asked about a fork with no row at most once a minute, and about 30 forks a minute in all */
 export const mayCheck = internalMutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
-    const row = await ctx.db.query("checks").withIndex("name", (q) => q.eq("name", name)).unique()
-    if (row && Date.now() - row.at < 30_000) return false
-    if (row) await ctx.db.patch(row._id, { at: Date.now() })
-    else await ctx.db.insert("checks", { name, at: Date.now() })
+    const now = Date.now()
+    for (const old of await ctx.db.query("checks").withIndex("at", (q) => q.lt("at", now - 60_000)).take(50)) await ctx.db.delete(old._id)
+    if ((await ctx.db.query("checks").withIndex("name", (q) => q.eq("name", name)).first()) !== null) return false
+    if ((await ctx.db.query("checks").withIndex("at").take(30)).length >= 30) return false
+    await ctx.db.insert("checks", { name, at: now })
     return true
   },
 })

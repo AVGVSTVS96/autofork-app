@@ -99,9 +99,11 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
   if (AsyncResult.isFailure(loaded)) return <p className="fine bad">{client.failure(loaded.cause)}</p>
   if (!draft) return null
   const limit = (key: keyof Settings["limits"]) => (event: React.ChangeEvent<HTMLInputElement>) =>
-    setDraft({ ...draft, limits: { ...draft.limits, [key]: Number(event.target.value) } })
+    setDraft({ ...draft, limits: { ...draft.limits, [key]: event.target.value === "" ? Number.NaN : Number(event.target.value) } })
+  const shown = (value: number) => (Number.isNaN(value) ? "" : value)
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (Object.values(draft.limits).some(Number.isNaN)) return setState({ busy: false, note: "Fill in every limit.", bad: true })
     setState({ busy: true, note: null, bad: false })
     try {
       const saved = client.unwrap(await save({ params: { owner, name }, payload: draft }))
@@ -140,15 +142,15 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
       <div className="limits">
         <label>
           <span>Rebuilds a month</span>
-          <input type="number" min={0} step={1} value={draft.limits.rebuilds} onChange={limit("rebuilds")} />
+          <input type="number" min={0} step={1} value={shown(draft.limits.rebuilds)} onChange={limit("rebuilds")} />
         </label>
         <label>
           <span>$ a month</span>
-          <input type="number" min={0} step={1} value={draft.limits.month} onChange={limit("month")} />
+          <input type="number" min={0} step={1} value={shown(draft.limits.month)} onChange={limit("month")} />
         </label>
         <label>
           <span>$ a rebuild</span>
-          <input type="number" min={0} step={1} value={draft.limits.rebuild} onChange={limit("rebuild")} />
+          <input type="number" min={0} step={1} value={shown(draft.limits.rebuild)} onChange={limit("rebuild")} />
         </label>
       </div>
       <p className="fine">A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices.</p>

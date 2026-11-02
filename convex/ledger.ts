@@ -7,12 +7,15 @@ export const monthStart = (now = Date.now()) => {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)
 }
 
+const PER_RUN = 50
+const PER_MONTH = 200
+
 export const thisMonth = (ctx: QueryCtx, repoId: number) =>
   ctx.db
     .query("rebuilds")
     .withIndex("repoId", (q) => q.eq("repoId", repoId).gte("_creationTime", monthStart()))
     .order("desc")
-    .collect()
+    .take(PER_MONTH)
 
 export const totals = internalQuery({
   args: { repoId: v.number() },
@@ -22,13 +25,11 @@ export const totals = internalQuery({
   },
 })
 
-const PER_RUN = 50
-
 export const open = internalMutation({
   args: { repoId: v.number(), name: v.string(), runId: v.number(), patch: v.string(), agent: v.string(), cap: v.number() },
   handler: async (ctx, row) => {
     const month = await thisMonth(ctx, row.repoId)
-    if (month.filter((rebuild) => rebuild.runId === row.runId).length >= PER_RUN) return null
+    if (month.length >= PER_MONTH || month.filter((rebuild) => rebuild.runId === row.runId).length >= PER_RUN) return null
     return ctx.db.insert("rebuilds", { ...row, cost: row.cap, model: null, inputTokens: null, outputTokens: null, status: "running", endedAt: null })
   },
 })

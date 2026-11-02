@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
-import { readSettings, withCron, withSettings } from "../shared/settings.ts"
+import { parses, readSettings, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -513,18 +513,36 @@ type Node = {
   workflow: Blob
 }
 
-const MINE = `{ viewer { repositories(first: 100, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: PUSHED_AT, direction: DESC }) {
+const MINE = `query($after: String) { viewer { repositories(first: 100, after: $after, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: PUSHED_AT, direction: DESC }) {
   nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
     config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
     workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
+  pageInfo { hasNextPage endCursor }
 } } }`
+
+type Page = { data?: { viewer: { repositories: { nodes: Node[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } }
+
+const PAGES = 10
+
+const everyRepo = (token: string) =>
+  Effect.gen(function* () {
+    const nodes: Node[] = []
+    let after: string | null = null
+    for (let page = 0; page < PAGES; page++) {
+      const { data }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } })
+      nodes.push(...(data?.viewer.repositories.nodes ?? []))
+      if (!data?.viewer.repositories.pageInfo.hasNextPage) break
+      after = data.viewer.repositories.pageInfo.endCursor
+    }
+    return nodes
+  })
 
 const PUSH = ["ADMIN", "MAINTAIN", "WRITE"]
 
 export const mine = (user: User) =>
-  GitHub.request<{ data?: { viewer: { repositories: { nodes: Node[] } } } }>(user.token, "POST", "/graphql", { query: MINE }).pipe(
-    Effect.map(({ data }) =>
-      (data?.viewer.repositories.nodes ?? [])
+  everyRepo(user.token).pipe(
+    Effect.map((nodes) =>
+      nodes
         .filter((repo) => repo.config && PUSH.includes(repo.viewerPermission ?? ""))
         .map(
           (repo): MyFork => ({
@@ -565,12 +583,16 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
   Effect.gen(function* () {
     const { rebuilds, month, rebuild } = wanted.limits
     if (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds)) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
-    if (wanted.cron !== null && !/^[\d*/,-]+( [\d*/,-]+){4}$/.test(wanted.cron)) return yield* new Problem({ message: "That isn't a cron schedule." })
+    if (rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const { repo, config, workflow } = yield* pushable(user, owner, name)
+    if (!parses(config)) return yield* new Problem({ message: `${owner}/${name}'s .autofork/config.json isn't valid JSON. Fix it in the repo first.` })
     const now = readSettings(config, workflow)
+    if (wanted.cron !== null && wanted.cron !== now.cron && !/^[\d*/,-]+( [\d*/,-]+){4}$/.test(wanted.cron))
+      return yield* new Problem({ message: "That isn't a cron schedule." })
     const files: GitHub.File[] = []
-    const nextConfig = withSettings(config, wanted)
-    if (nextConfig !== config) files.push({ path: ".autofork/config.json", content: nextConfig })
+    const unchanged = now.follow === wanted.follow.trim() && JSON.stringify(now.limits) === JSON.stringify(wanted.limits)
+    const nextConfig = unchanged ? config : withSettings(config, wanted)
+    if (!unchanged) files.push({ path: ".autofork/config.json", content: nextConfig })
     if (wanted.cron && wanted.cron !== now.cron) {
       if (!workflow || now.cron === null) return yield* new Problem({ message: "This fork's autofork.yml has no schedule to change." })
       files.push({ path: ".github/workflows/autofork.yml", content: withCron(workflow, wanted.cron) })

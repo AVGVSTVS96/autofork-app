@@ -1,8 +1,6 @@
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
-export const limits = v.object({ rebuilds: v.number(), month: v.number(), rebuild: v.number() })
-
 export default defineSchema({
   forks: defineTable({
     repoId: v.number(),
@@ -18,7 +16,7 @@ export default defineSchema({
     .index("repoId", ["repoId"])
     .index("name", ["name"])
     .index("installationId", ["installationId"]),
-  checks: defineTable({ name: v.string(), at: v.number() }).index("name", ["name"]),
+  checks: defineTable({ name: v.string(), at: v.number() }).index("name", ["name"]).index("at", ["at"]),
   rebuilds: defineTable({
     repoId: v.number(),
     name: v.string(),

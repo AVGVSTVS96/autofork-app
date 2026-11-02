@@ -6,11 +6,10 @@ import { NONE, SettingsCard, SignInAgain, SpendCard } from "./Spend.tsx"
 const Cards = ({ owner, name }: { owner: string; name: string }) => {
   const forks = useSpend()
   const [settings, setSettings] = useState<Settings | null>(null)
-  if (forks === null) return <SignInAgain back={`/${owner}/${name}`} />
   const spend = forks && (forks.find((fork) => fork.name === `${owner}/${name}`.toLowerCase()) ?? NONE)
   return (
     <>
-      <SpendCard spend={spend} settings={settings} owner={owner} name={name} />
+      {forks === null ? <SignInAgain back={`/${owner}/${name}`} /> : <SpendCard spend={spend ?? undefined} settings={settings} owner={owner} name={name} />}
       <SettingsCard owner={owner} name={name} onSaved={setSettings} />
     </>
   )

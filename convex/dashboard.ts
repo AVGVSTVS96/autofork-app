@@ -3,11 +3,17 @@ import { internalMutation, query } from "./_generated/server"
 import { thisMonth } from "./ledger"
 
 export const allow = internalMutation({
-  args: { user: v.string(), repos: v.array(v.object({ id: v.number(), name: v.string() })), add: v.boolean() },
-  handler: async (ctx, { user, repos, add }) => {
+  args: {
+    user: v.string(),
+    repos: v.array(v.object({ id: v.number(), name: v.string() })),
+    mode: v.union(v.literal("replace"), v.literal("add"), v.literal("drop")),
+  },
+  handler: async (ctx, { user, repos, mode }) => {
     const row = await ctx.db.query("access").withIndex("user", (q) => q.eq("user", user)).unique()
-    if (row) await ctx.db.patch(row._id, { repos: add ? [...row.repos.filter((repo) => !repos.some((added) => added.id === repo.id)), ...repos] : repos })
-    else await ctx.db.insert("access", { user, repos })
+    const others = (row?.repos ?? []).filter((repo) => !repos.some((given) => given.id === repo.id || given.name === repo.name))
+    const next = mode === "replace" ? repos : mode === "add" ? [...others, ...repos] : others
+    if (row) await ctx.db.patch(row._id, { repos: next })
+    else await ctx.db.insert("access", { user, repos: next })
   },
 })
 

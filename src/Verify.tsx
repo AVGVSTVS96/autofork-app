@@ -4,7 +4,7 @@ import { Nav, useTitle } from "./ui.tsx"
 const route = getRouteApi("/verify")
 
 export const VerifyRoute = () => {
-  const { email, error } = route.useSearch()
+  const { email, error, back } = route.useSearch()
   useTitle("Check your email · autofork")
   return (
     <div className="page bare">
@@ -26,6 +26,9 @@ export const VerifyRoute = () => {
             </button>
             {error ? <p className="bad">{error}</p> : null}
           </div>
+          <p className="fine">
+            No code, or it expired? <a href={`/api/github/start?back=${encodeURIComponent(back ?? "/forks")}`}>Start over</a>
+          </p>
         </form>
       </main>
     </div>

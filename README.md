@@ -29,7 +29,7 @@ bun install
 bun run dev
 ```
 
-`.env.local` needs a GitHub App (contents, workflows, actions, secrets and administration write, user authorization on install):
+`.env.local` needs a GitHub App (contents, workflows, actions, secrets and administration write, email addresses read, user authorization on install), a WorkOS environment whose GitHub sign-in uses that App and returns its tokens, and a Convex deployment (`bunx convex dev`):
 
 ```
 GITHUB_APP_ID=
@@ -38,7 +38,14 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_PRIVATE_KEY=
 SESSION_SECRET=
+WORKOS_CLIENT_ID=
+WORKOS_API_KEY=
+VITE_CONVEX_URL=
+CONVEX_SITE_URL=
+AUTOFORK_SERVER_SECRET=
 ```
+
+The Convex deployment needs `GITHUB_CLIENT_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (the App's webhook secret), `WORKOS_CLIENT_ID` and the same `AUTOFORK_SERVER_SECRET`. The App's webhook goes to `/api/github/hook`.
 
 ## License
 

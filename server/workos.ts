@@ -31,10 +31,11 @@ const authenticate = (grant: Record<string, string>) =>
       try: async () => {
         const response = await fetch(`${API}/authenticate`, {
           method: "POST",
+          signal: AbortSignal.timeout(10_000),
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ client_id: workosClientId, client_secret: Redacted.value(workosApiKey), ...grant }),
         })
-        const body = (await response.json()) as Signed & {
+        const body = (await response.json().catch(() => ({}))) as Signed & {
           code?: string
           message?: string
           error_description?: string

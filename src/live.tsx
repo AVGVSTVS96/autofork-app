@@ -2,14 +2,25 @@ import { ConvexProvider, ConvexReactClient, useQuery } from "convex/react"
 import type { ReactNode } from "react"
 import { api } from "../convex/_generated/api"
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL)
+const url = import.meta.env.VITE_CONVEX_URL as string | undefined
+const convex = url ? new ConvexReactClient(url) : undefined
 
-convex.setAuth(async () => {
-  const response = await fetch("/api/auth/token")
-  return response.ok ? ((await response.json()) as { token: string }).token : null
-})
+/* Only a 401 means signed out: a throw would leave Convex's socket paused, and null for a hiccup would show "sign in again" to someone signed in */
+const token = async () => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch("/api/auth/token")
+      if (response.status === 401) return null
+      if (response.ok) return ((await response.json()) as { token: string }).token
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt))
+  }
+  return null
+}
 
-export const Live = ({ children }: { children: ReactNode }) => <ConvexProvider client={convex}>{children}</ConvexProvider>
+convex?.setAuth(token)
+
+export const Live = ({ children }: { children: ReactNode }) => (convex ? <ConvexProvider client={convex}>{children}</ConvexProvider> : null)
 
 export type Spend = NonNullable<ReturnType<typeof useSpend>>[number]
 

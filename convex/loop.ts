@@ -4,7 +4,13 @@ import type { Id } from "./_generated/dataModel"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { GitHubError, installationToken, request } from "./github"
 
-type Watched = { id: Id<"forks">; name: string; branch: string; installationId: number; seen: string | null }
+type Watched = {
+  id: Id<"forks">
+  name: string
+  branch: string
+  installationId: number
+  seen: string | null
+}
 
 export const watching = internalQuery({
   args: {},
@@ -17,9 +23,9 @@ export const watching = internalQuery({
 })
 
 export const seen = internalMutation({
-  args: { forks: v.array(v.object({ id: v.id("forks"), seen: v.string() })) },
+  args: { forks: v.array(v.object({ id: v.id("forks"), watch: v.string(), seen: v.string() })) },
   handler: async (ctx, { forks }) => {
-    for (const { id, seen } of forks) if (await ctx.db.get(id)) await ctx.db.patch(id, { seen })
+    for (const { id, watch, seen } of forks) if ((await ctx.db.get(id))?.watch === watch) await ctx.db.patch(id, { seen })
   },
 })
 
@@ -53,61 +59,64 @@ const mark = (key: string, found: Found) => {
 }
 
 const CHUNK = 50
+const AT_ONCE = 10
 
-/* Every minute, one GraphQL query asks what every watched upstream has published (a release's REST ETag changes with its download counts, so
-   conditional requests wouldn't stay free), and each linked fork that hasn't been started for what's there now gets a run. Each fork keeps its own
-   mark, so one broken fork never restarts the others: a refused dispatch marks it anyway (GitHub's schedule is its backup), a GitHub outage
-   leaves it for the next tick. */
+const pool = async <A>(items: A[], run: (item: A) => Promise<void>) => {
+  const queue = [...items]
+  await Promise.all(
+    Array.from({ length: AT_ONCE }, async () => {
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await run(item)
+    }),
+  )
+}
+
+/* Every minute, one GraphQL query per installation asks what the upstreams its forks follow have published (a release's REST ETag changes with
+   its download counts, so conditional requests wouldn't stay free). Each upstream is read by an installation that follows it, so a private
+   upstream is read only by someone who can see it. Each fork keeps its own mark, so one broken fork never restarts the others: a refused
+   dispatch marks it anyway (GitHub's schedule is its backup), a GitHub outage or rate limit leaves it for the next tick. */
 export const tick = internalAction({
   args: {},
   handler: async (ctx) => {
     const watches = await ctx.runQuery(internal.loop.watching, {})
-    if (!watches.length) return
     const tokens = new Map<number, Promise<string>>()
     const token = (installationId: number) => {
       if (!tokens.has(installationId)) tokens.set(installationId, installationToken(installationId))
       return tokens.get(installationId)!
     }
-    const installations = [...new Set(watches.flatMap((watch) => watch.forks.map((fork) => fork.installationId)))]
-    let reader: string | undefined
-    for (const installationId of installations.sort(() => Math.random() - 0.5)) {
-      reader = await token(installationId).catch(() => undefined)
-      if (reader) break
+    const readers = new Map<number, typeof watches>()
+    for (const watch of watches) {
+      const reader = Math.min(...watch.forks.map((fork) => fork.installationId))
+      readers.set(reader, [...(readers.get(reader) ?? []), watch])
     }
-    if (!reader) return console.warn("no installation gave a token, so no upstream was checked")
-    const found: Record<string, Found> = {}
-    for (let at = 0; at < watches.length; at += CHUNK) {
-      const chunk = watches.slice(at, at + CHUNK)
-      const query = `{ ${chunk.map((watch, index) => `w${at + index}: ${fields(watch.key)}`).join("\n")} }`
-      const { body } = await request<{ data?: Record<string, Found>; errors?: unknown[] }>(reader, "POST", "graphql", { query }).catch((error) => {
-        console.warn(`couldn't check upstreams: ${error}`)
-        return { body: {} as { data?: Record<string, Found> } }
-      })
-      Object.assign(found, body.data ?? {})
-    }
-    const marked: { id: Id<"forks">; seen: string }[] = []
-    await Promise.all(
-      watches.map(async (watch, index) => {
-        const now = mark(watch.key, found[`w${index}`] ?? null)
-        if (!now) return
-        await Promise.all(
-          watch.forks.map(async (fork) => {
-            if (fork.seen === now) return
-            if (fork.seen !== null) {
-              try {
-                await request(await token(fork.installationId), "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
-                console.log(`${watch.key} is at ${now}: started ${fork.name}`)
-              } catch (error) {
-                console.warn(`couldn't start ${fork.name}: ${error}`)
-                if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429) return
-                await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name })
-              }
-            }
-            marked.push({ id: fork.id, seen: now })
-          }),
-        )
-      }),
-    )
+    const found = new Map<string, Found>()
+    for (const [reader, theirs] of readers)
+      for (let at = 0; at < theirs.length; at += CHUNK) {
+        const chunk = theirs.slice(at, at + CHUNK)
+        const query = `{ ${chunk.map((watch, index) => `w${index}: ${fields(watch.key)}`).join("\n")} }`
+        try {
+          const { body } = await request<{ data?: Record<string, Found> }>(await token(reader), "POST", "graphql", { query })
+          chunk.forEach((watch, index) => found.set(watch.key, body.data?.[`w${index}`] ?? null))
+        } catch (error) {
+          console.warn(`couldn't check ${chunk.length} upstreams: ${error}`)
+        }
+      }
+    const due = watches.flatMap((watch) => {
+      const now = mark(watch.key, found.get(watch.key) ?? null)
+      return now ? watch.forks.filter((fork) => fork.seen !== now).map((fork) => ({ fork, watch: watch.key, now })) : []
+    })
+    const marked: { id: Id<"forks">; watch: string; seen: string }[] = []
+    await pool(due, async ({ fork, watch, now }) => {
+      if (fork.seen !== null)
+        try {
+          await request(await token(fork.installationId), "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
+          console.log(`${watch} is at ${now}: started ${fork.name}`)
+        } catch (error) {
+          console.warn(`couldn't start ${fork.name}: ${error}`)
+          if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429) return
+          await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {})
+        }
+      marked.push({ id: fork.id, watch, seen: now })
+    })
     if (marked.length) await ctx.runMutation(internal.loop.seen, { forks: marked })
   },
 })
