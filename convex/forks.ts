@@ -8,7 +8,7 @@ import { dropToken, file, installationToken, repoInstallation, request } from ".
 const repoOf = (upstream: string) =>
   upstream
     .trim()
-    .match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1]
+    .match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1]
     ?.toLowerCase() ?? null
 
 /* `green: false` follows a branch's tip whatever its checks say */
