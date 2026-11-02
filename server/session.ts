@@ -65,7 +65,7 @@ type Saved = { account?: Account; user?: number }
 const fromCookies = Effect.gen(function* () {
   const { cookies } = yield* HttpServerRequest.HttpServerRequest
   const main: Session = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
-  const saved: Saved = cookies[ACCOUNT] ? yield* decrypt<Saved>(cookies[ACCOUNT]) : { account: main.account, user: main.user?.id }
+  const saved: Saved = cookies[ACCOUNT] ? yield* decrypt<Saved>(cookies[ACCOUNT]) : {}
   return { main, saved }
 })
 
