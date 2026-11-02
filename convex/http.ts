@@ -50,8 +50,8 @@ http.route({
     const who = await fork(request)
     const { patch, agent, cap } = (await request.json()) ?? {}
     if (typeof patch !== "string" || !["claude", "codex", "custom"].includes(agent) || !usd(cap)) return json({ error: "need patch, agent and cap" }, 400)
-    const id = await ctx.runMutation(internal.ledger.open, { ...who, patch: patch.slice(0, 200), agent, cap })
-    return id ? json({ id }, 201) : json({ error: "this run has opened too many rebuilds" }, 429)
+    const opened = await ctx.runMutation(internal.ledger.open, { ...who, patch: patch.slice(0, 200), agent, cap })
+    return "id" in opened ? json({ id: opened.id }, 201) : json({ error: opened.full }, 429)
   }),
 })
 
@@ -90,9 +90,8 @@ http.route({
     if (!(await ctx.runMutation(internal.forks.mayCheck, { name: repo }))) return json({ linked: false, cron: null, checked: false })
     const found = await ctx.runAction(internal.forks.refresh, { name: repo }).catch(() => null)
     if (!found) return json({ error: "GitHub didn't answer; try again in a minute" }, 502)
-    /* Whether the app is installed isn't secret: GitHub's install page shows it */
-    const why = "why" in found && (found.open || found.why === "not installed") ? { why: found.why } : {}
-    return json(found.open ? { linked: found.linked, cron: found.cron, ...why } : { linked: found.linked, cron: null, ...why })
+    /* A repo that isn't public gets the same answer whether it's missing, private or not installed */
+    return json(found.open ? { linked: found.linked, cron: found.cron, ...("why" in found ? { why: found.why } : {}) } : { linked: found.linked, cron: null })
   }),
 })
 

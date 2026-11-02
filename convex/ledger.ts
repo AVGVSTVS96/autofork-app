@@ -30,8 +30,10 @@ export const open = internalMutation({
   args: { repoId: v.number(), name: v.string(), runId: v.number(), attempt: v.number(), patch: v.string(), agent: v.string(), cap: v.number() },
   handler: async (ctx, row) => {
     const month = await thisMonth(ctx, row.repoId)
-    if (month.length >= PER_MONTH || month.filter((rebuild) => rebuild.runId === row.runId && (rebuild.attempt ?? 1) === row.attempt).length >= PER_RUN) return null
-    return ctx.db.insert("rebuilds", { ...row, cost: row.cap, model: null, inputTokens: null, outputTokens: null, status: "running", endedAt: null })
+    if (month.length >= PER_MONTH) return { full: `autofork records up to ${PER_MONTH} rebuilds a fork a month` }
+    if (month.filter((rebuild) => rebuild.runId === row.runId && (rebuild.attempt ?? 1) === row.attempt).length >= PER_RUN)
+      return { full: `autofork records up to ${PER_RUN} rebuilds a run` }
+    return { id: await ctx.db.insert("rebuilds", { ...row, cost: row.cap, model: null, inputTokens: null, outputTokens: null, status: "running", endedAt: null }) }
   },
 })
 

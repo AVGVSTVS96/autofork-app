@@ -163,7 +163,8 @@ export const tick = internalAction({
       if (read === undefined) return []
       /* "" records that upstream had nothing to follow yet, so the first thing it publishes still starts a run */
       const now = markOf(key, read)
-      if (now === undefined) return []
+      /* A new fork whose upstream tip isn't green yet starts from "", so that tip going green still starts a run */
+      if (now === undefined) return fork.seen === null ? [{ fork, watch: key, now: "" }] : []
       return fork.seen !== now ? [{ fork, watch: key, now }] : []
     })
     const quiet = due.filter(({ fork }) => fork.seen === null).map(({ fork, watch, now }) => ({ id: fork.id, watch, seen: now }))
