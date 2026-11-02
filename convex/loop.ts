@@ -45,7 +45,7 @@ type Found = {
   releases: { nodes: { tagName: string }[] }
   refs: { nodes: { name: string; target: { oid: string } | null }[] } | null
   defaultBranchRef: { target: { oid: string } | null } | null
-  ref?: { target: { oid: string; statusCheckRollup?: { state: string } | null } | null } | null
+  ref?: { target: { oid: string; committedDate?: string; statusCheckRollup?: { state: string } | null } | null } | null
 } | null
 
 const fields = (key: string) => {
@@ -57,7 +57,7 @@ const fields = (key: string) => {
     releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName } }
     refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name target { oid } } }
     defaultBranchRef { target { oid } }
-    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { statusCheckRollup { state } } } }` : ""}
+    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { committedDate statusCheckRollup { state } } } }` : ""}
   }`
 }
 
@@ -71,7 +71,9 @@ const mark = (key: string, found: Found) => {
   if (kind === "branch") {
     const target = found.ref?.target
     const state = target?.statusCheckRollup?.state
-    return state && state !== "SUCCESS" && !key.endsWith(" any") ? undefined : (target?.oid ?? null)
+    /* A commit pushed moments ago may not have its checks attached yet */
+    const settling = !state && Date.now() - Date.parse(target?.committedDate ?? "") < 120_000
+    return (settling || (state && state !== "SUCCESS")) && !key.endsWith(" any") ? undefined : (target?.oid ?? null)
   }
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
   return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target?.oid ?? null

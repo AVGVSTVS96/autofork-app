@@ -50,6 +50,12 @@ export const readableLimits = (config: string | null) => {
   return Object.keys(LIMITS).every((key) => !(key in limits) || limits[key] === read[key])
 }
 
+/* A follow that isn't a string shows as empty, so saving would drop what the owner wrote */
+export const readableFollow = (config: string | null) => {
+  const { follow } = parse(config)
+  return follow === undefined || typeof follow === "string"
+}
+
 export const withSettings = (config: string | null, { follow, limits }: Pick<Settings, "follow" | "limits">) => {
   const { follow: _, ...rest } = parse(config)
   const merged = { ...(object(rest.limits) ? rest.limits : {}), ...limits }

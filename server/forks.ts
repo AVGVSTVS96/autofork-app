@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
-import { cronLines, parses, readableLimits, readSettings, withCron, withSettings } from "../shared/settings.ts"
+import { cronLines, parses, readableFollow, readableLimits, readSettings, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -617,6 +617,8 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       return yield* new Problem({ message: "Pick one of the schedules, or set another in autofork.yml." })
     const files: GitHub.File[] = []
     const unchanged = now.follow === wanted.follow.trim() && JSON.stringify(now.limits) === JSON.stringify(wanted.limits)
+    if (!unchanged && !readableFollow(config))
+      return yield* new Problem({ message: `${owner}/${name}'s "follow" in .autofork/config.json isn't text. Fix it in the repo first.` })
     if (!unchanged && !readableLimits(config))
       return yield* new Problem({ message: `${owner}/${name}'s "limits" in .autofork/config.json aren't numbers autofork can read. Fix them in the repo first.` })
     const nextConfig = unchanged ? config : withSettings(config, wanted)

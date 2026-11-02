@@ -122,7 +122,7 @@ http.route({
     const event = request.headers.get("x-github-event")
     const hook = JSON.parse(body) as Hook
     const refresh = (repos: { full_name: string }[] = []) =>
-      Promise.all(repos.map((repo) => ctx.scheduler.runAfter(0, internal.forks.refresh, { name: repo.full_name })))
+      Promise.all(repos.map((repo, index) => ctx.scheduler.runAfter(index * 250, internal.forks.refresh, { name: repo.full_name })))
     if (event === "installation" && hook.action === "deleted" && hook.installation)
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)
