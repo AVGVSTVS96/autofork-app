@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
 import * as Cause from "effect/Cause"
+import * as Exit from "effect/Exit"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as HttpRouter from "effect/http/HttpRouter"
@@ -58,9 +59,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("saveSettings", ({ params, payload }) =>
       github(
         Effect.gen(function* () {
-          const saved = yield* Forks.saveSettings(yield* GitHub.signedIn, params.owner, params.name, payload)
-          yield* relink(params.owner, params.name)
-          return saved
+          return yield* Forks.saveSettings(yield* GitHub.signedIn, params.owner, params.name, payload)
         }),
       ),
     )
@@ -108,7 +107,16 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
       ),
     )
     .handle("fork", ({ params }) => github(Forks.status(params.owner, params.name)))
-    .handle("yours", ({ params }) => viewer.pipe(Effect.flatMap((user) => (user ? Forks.yours(user, params.owner, params.name) : Effect.succeed(false)))))
+    .handle("yours", ({ params }) =>
+      Effect.gen(function* () {
+        const user = yield* viewer
+        if (!user) return false
+        const repo = yield* Forks.yours(user, params.owner, params.name)
+        const { account } = yield* Session.read
+        if (repo && account) yield* allow(account.id, [{ id: repo.id, name: repo.name }], true)
+        return !!repo
+      }),
+    )
     .handle("addChange", ({ params, payload }) =>
       github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.addChange(user, params.owner, params.name, payload.change)))),
     ),
@@ -153,7 +161,6 @@ const pending = Effect.gen(function* () {
   return { session, signIn, failed }
 })
 
-/* WorkOS signs the person in with GitHub, which makes their autofork account, and hands back the GitHub token autofork's App got */
 const accountCallback = HttpRouter.add("GET", "/api/auth/callback", (request) =>
   Effect.gen(function* () {
     const query = params(request)
@@ -198,25 +205,24 @@ const verifyEmail = HttpRouter.add("POST", "/api/auth/verify", (request) =>
   }),
 )
 
-/* Where GitHub sends people back after installing autofork's App, signing them in again as it does */
 const callback = HttpRouter.add("GET", "/api/github/callback", (request) =>
   Effect.gen(function* () {
     const query = params(request)
     const { session, signIn, failed } = yield* pending
     if (!signIn) return failed("GitHub sign-in expired. Try again.")
-    if (query.get("state") && query.get("state") !== signIn.state) return failed("GitHub sign-in expired. Try again.")
-    const code = query.get("code")
-    if (!code) {
-      if (query.get("error")) yield* Effect.logWarning(`WorkOS sign-in: ${query.get("error")} ${query.get("error_description")}`)
-      return query.get("error") ? failed("GitHub didn't finish signing you in. Try again.") : HttpServerResponse.redirect(signIn.back)
+    if (session.user && session.account) {
+      yield* Session.write({ user: session.user, account: session.account })
+      return HttpServerResponse.redirect(signIn.back)
     }
+    if (query.get("state") !== signIn.state) return failed("GitHub sign-in expired. Try again.")
+    const code = query.get("code")
+    if (!code) return HttpServerResponse.redirect(signIn.back)
     const signedIn = yield* GitHub.exchange(code).pipe(Effect.option)
     if (signedIn._tag === "None") return failed("GitHub didn't finish signing you in. Try again.")
     return yield* finish(session, signIn.back, signIn.state, signedIn.value.user, signedIn.value.installed, session.account)
   }),
 )
 
-/* Linking a fork: sign in first if needed, then GitHub's install page with the fork ticked, then back to /link */
 const install = HttpRouter.add("GET", "/api/github/install", (request) =>
   Effect.gen(function* () {
     const { appSlug } = yield* Env.Env
@@ -235,13 +241,13 @@ const install = HttpRouter.add("GET", "/api/github/install", (request) =>
   }),
 )
 
-const convex = (path: string, body: unknown, secret?: Redacted.Redacted<string>) =>
+const convex = (path: string, body: unknown, secret: Redacted.Redacted<string>) =>
   Effect.gen(function* () {
     const { convexSite } = yield* Env.Env
     yield* Effect.tryPromise(async () => {
       const response = await fetch(`${convexSite}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${Redacted.value(secret)}` } : {}) },
+        headers: { "content-type": "application/json", authorization: `Bearer ${Redacted.value(secret)}` },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(10_000),
       })
@@ -249,24 +255,26 @@ const convex = (path: string, body: unknown, secret?: Redacted.Redacted<string>)
     })
   }).pipe(Effect.catch((error) => Effect.logWarning(`convex ${path}: ${error}`)))
 
-/* The repos this account can push to, so Convex shows it their spend */
-const allow = (user: string, repos: { id: number; name: string }[]) =>
+const allow = (user: string, repos: { id: number; name: string }[], add = false) =>
   Effect.gen(function* () {
     const { serverSecret } = yield* Env.Env
-    yield* convex("/access", { user, repos }, serverSecret)
+    yield* convex("/access", { user, repos, add }, serverSecret)
   })
 
-const relink = (owner: string, name: string) => convex("/link", { owner, name })
+/* WorkOS spends a refresh token once, so requests that arrive together with the same cookie share one renewal */
+const renewals = new Map<string, Promise<Exit.Exit<WorkOS.Signed, unknown>>>()
 
 const convexToken = Effect.gen(function* () {
   const { account } = yield* Session.read
   if (!account) return yield* new SignedOut()
   if (WorkOS.expiry(account.access) > Date.now() + 60_000) return { token: account.access }
-  const renewed = yield* WorkOS.refreshed(account.refresh).pipe(Effect.option)
-  if (renewed._tag === "None") {
-    yield* Session.update(({ account: _, ...rest }) => rest)
-    return yield* new SignedOut()
+  const env = yield* Env.Env
+  if (!renewals.has(account.refresh)) {
+    renewals.set(account.refresh, Effect.runPromiseExit(WorkOS.refreshed(account.refresh).pipe(Effect.provideService(Env.Env, env))))
+    setTimeout(() => renewals.delete(account.refresh), 60_000)
   }
+  const renewed = yield* Effect.promise(() => renewals.get(account.refresh)!)
+  if (Exit.isFailure(renewed)) return yield* new SignedOut()
   yield* Session.update((session) => ({ ...session, account: { id: account.id, access: renewed.value.access_token, refresh: renewed.value.refresh_token } }))
   return { token: renewed.value.access_token }
 })

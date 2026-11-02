@@ -1,15 +1,16 @@
 import { useState } from "react"
 import type { Settings } from "../shared/api.ts"
 import { Live, useSpend } from "./live.tsx"
-import { SettingsCard, SpendCard } from "./Spend.tsx"
+import { NONE, SettingsCard, SignInAgain, SpendCard } from "./Spend.tsx"
 
 const Cards = ({ owner, name }: { owner: string; name: string }) => {
   const forks = useSpend()
   const [settings, setSettings] = useState<Settings | null>(null)
-  const spend = forks?.find((fork) => fork.name === `${owner}/${name}`.toLowerCase())
+  if (forks === null) return <SignInAgain back={`/${owner}/${name}`} />
+  const spend = forks && (forks.find((fork) => fork.name === `${owner}/${name}`.toLowerCase()) ?? NONE)
   return (
     <>
-      <SpendCard spend={forks === undefined ? undefined : spend} settings={settings} owner={owner} name={name} />
+      <SpendCard spend={spend} settings={settings} owner={owner} name={name} />
       <SettingsCard owner={owner} name={name} onSaved={setSettings} />
     </>
   )

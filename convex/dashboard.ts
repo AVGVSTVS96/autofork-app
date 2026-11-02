@@ -2,17 +2,15 @@ import { v } from "convex/values"
 import { internalMutation, query } from "./_generated/server"
 import { thisMonth } from "./ledger"
 
-/* The repos a signed-in person can push to, as autofork.com's server last read them from GitHub with their own sign-in */
 export const allow = internalMutation({
-  args: { user: v.string(), repos: v.array(v.object({ id: v.number(), name: v.string() })) },
-  handler: async (ctx, { user, repos }) => {
+  args: { user: v.string(), repos: v.array(v.object({ id: v.number(), name: v.string() })), add: v.boolean() },
+  handler: async (ctx, { user, repos, add }) => {
     const row = await ctx.db.query("access").withIndex("user", (q) => q.eq("user", user)).unique()
-    if (row) await ctx.db.patch(row._id, { repos })
+    if (row) await ctx.db.patch(row._id, { repos: add ? [...row.repos.filter((repo) => !repos.some((added) => added.id === repo.id)), ...repos] : repos })
     else await ctx.db.insert("access", { user, repos })
   },
 })
 
-/* Spend is only for people who can push to the fork */
 export const forks = query({
   args: {},
   handler: async (ctx) => {

@@ -13,12 +13,12 @@ export default defineSchema({
     follow: v.string(),
     watch: v.union(v.string(), v.null()),
     cron: v.union(v.string(), v.null()),
+    seen: v.optional(v.string()),
   })
     .index("repoId", ["repoId"])
     .index("name", ["name"])
-    .index("installationId", ["installationId"])
-    .index("watch", ["watch"]),
-  watches: defineTable({ path: v.string(), etag: v.union(v.string(), v.null()), seen: v.optional(v.string()) }).index("path", ["path"]),
+    .index("installationId", ["installationId"]),
+  checks: defineTable({ name: v.string(), at: v.number() }).index("name", ["name"]),
   rebuilds: defineTable({
     repoId: v.number(),
     name: v.string(),

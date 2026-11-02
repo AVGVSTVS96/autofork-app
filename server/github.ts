@@ -175,7 +175,6 @@ export const identify = (tokens: { token: string; refresh: string; expires: numb
 
 type Tokens = Effect.Success<ReturnType<typeof oauth>>
 
-/* WorkOS hands back the GitHub token it got with autofork's App, and GitHub renews it with the App's own client */
 export const fromWorkOS = (github: { access_token: string; refresh_token?: string; expires_at?: number | string }): Tokens => {
   const at = typeof github.expires_at === "string" ? Date.parse(github.expires_at) : github.expires_at && github.expires_at < 1e12 ? github.expires_at * 1000 : github.expires_at
   return { token: github.access_token, refresh: github.refresh_token ?? "", expires: at || Number.MAX_SAFE_INTEGER }

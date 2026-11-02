@@ -6,6 +6,15 @@ import * as client from "./client.ts"
 import { money, type Spend } from "./live.tsx"
 import { Item } from "./ui.tsx"
 
+export const NONE: Spend = { repoId: 0, name: "", linked: false, rebuilds: [], spent: 0 }
+
+/* Accounts from before sign-in went through WorkOS have no Convex session yet */
+export const SignInAgain = ({ back }: { back: string }) => (
+  <p className="fine">
+    <a href={`/api/github/start?back=${encodeURIComponent(back)}`}>Sign in again</a> to see what this fork's rebuilds cost.
+  </p>
+)
+
 const day = (at: number) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
 
 const shortModel = (model: string | null) => model?.replace(/^claude-/, "").replace(/-\d{8}$/, "") ?? null
@@ -26,7 +35,6 @@ export const Timer = ({ spend, owner, name }: { spend: Spend | undefined; owner:
     </p>
   )
 
-/* This month's rebuilds, live: a running one counts at its cap until it reports what it cost */
 export const SpendCard = ({ spend, settings, owner, name }: { spend: Spend | undefined; settings: Settings | null; owner: string; name: string }) => {
   const limits = settings?.limits
   return (
@@ -74,7 +82,6 @@ const PRESETS = Object.entries(EVERY) as [keyof typeof EVERY, string][]
 
 const LABEL: Record<keyof typeof EVERY, string> = { "5m": "5 min", "15m": "15 min", "1h": "hour", "1d": "day" }
 
-/* Saving commits to the fork's own config and workflow, so the fork runs the same without this site */
 export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: string; onSaved: (settings: Settings) => void }) => {
   const atom = useMemo(() => client.settings(owner, name), [owner, name])
   const loaded = useAtomValue(atom)

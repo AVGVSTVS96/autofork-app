@@ -40,7 +40,8 @@ http.route({
     const who = await fork(request)
     const { patch, agent, cap } = await request.json()
     if (typeof patch !== "string" || !["claude", "codex", "custom"].includes(agent) || !usd(cap)) return json({ error: "need patch, agent and cap" }, 400)
-    return json({ id: await ctx.runMutation(internal.ledger.open, { ...who, patch: patch.slice(0, 200), agent, cap }) }, 201)
+    const id = await ctx.runMutation(internal.ledger.open, { ...who, patch: patch.slice(0, 200), agent, cap })
+    return id ? json({ id }, 201) : json({ error: "this run has opened too many rebuilds" }, 429)
   }),
 })
 
@@ -65,7 +66,6 @@ http.route({
   }),
 })
 
-/* No sign-in needed: it only makes the fork's row match GitHub */
 http.route({
   path: "/link",
   method: "POST",
@@ -73,7 +73,11 @@ http.route({
     const { owner, name } = await request.json()
     if (typeof owner !== "string" || typeof name !== "string" || !/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(name))
       return json({ error: "need owner and name" }, 400)
-    return json(await ctx.runAction(internal.forks.refresh, { name: `${owner}/${name}` }))
+    const repo = `${owner}/${name}`.toLowerCase()
+    const row = await ctx.runQuery(internal.forks.byName, { name: repo })
+    if (row) return json({ linked: true, cron: row.cron })
+    if (await ctx.runMutation(internal.forks.mayCheck, { name: repo })) return json(await ctx.runAction(internal.forks.refresh, { name: repo }))
+    return json({ linked: false, cron: null })
   }),
 })
 
@@ -108,7 +112,8 @@ http.route({
       event === "push" &&
       hook.repository &&
       hook.ref === `refs/heads/${hook.repository.default_branch}` &&
-      (hook.commits ?? []).some((commit) => [...commit.added, ...commit.modified, ...commit.removed].some((path) => SETTINGS.includes(path)))
+      ((hook.commits ?? []).length >= 20 ||
+        (hook.commits ?? []).some((commit) => [...commit.added, ...commit.modified, ...commit.removed].some((path) => SETTINGS.includes(path))))
     )
       await refresh([hook.repository])
     return new Response(null, { status: 204 })
@@ -119,11 +124,12 @@ http.route({
   path: "/access",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    if (request.headers.get("authorization") !== `Bearer ${process.env.AUTOFORK_SERVER_SECRET}`) return json({ error: "not allowed" }, 403)
-    const { user, repos } = await request.json()
+    const secret = process.env.AUTOFORK_SERVER_SECRET
+    if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "not allowed" }, 403)
+    const { user, repos, add } = await request.json()
     if (typeof user !== "string" || !Array.isArray(repos) || !repos.every((repo) => Number.isInteger(repo?.id) && typeof repo?.name === "string"))
       return json({ error: "need user and repos" }, 400)
-    await ctx.runMutation(internal.dashboard.allow, { user, repos: repos.map(({ id, name }) => ({ id, name: name.toLowerCase() })) })
+    await ctx.runMutation(internal.dashboard.allow, { user, add: add === true, repos: repos.map(({ id, name }) => ({ id, name: name.toLowerCase() })) })
     return new Response(null, { status: 204 })
   }),
 })

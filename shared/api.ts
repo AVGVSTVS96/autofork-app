@@ -49,7 +49,6 @@ export const LIMITS = { rebuilds: 10, month: 200, rebuild: 20 } as const
 export const Limits = Schema.Struct({ rebuilds: Schema.Number, month: Schema.Number, rebuild: Schema.Number })
 export type Limits = typeof Limits.Type
 
-/* GitHub's schedule, the workflow's first cron line: the only timer for a fork that isn't linked, and the late backup for one that is */
 export const EVERY = { "5m": "*/5 * * * *", "15m": "*/15 * * * *", "1h": "17 * * * *", "1d": "17 6 * * *" } as const
 
 export const Settings = Schema.Struct({ cron: Schema.NullOr(Schema.String), follow: Schema.String, limits: Limits })

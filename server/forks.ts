@@ -496,9 +496,9 @@ export const status = (owner: string, name: string) =>
   })
 
 export const yours = (viewer: User, owner: string, name: string) =>
-  GitHub.request<GitHubRepo>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
-    Effect.map((seen) => !!seen.permissions?.push),
-    Effect.orElseSucceed(() => false),
+  GitHub.request<GitHubRepo & { id: number }>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
+    Effect.map((seen) => (seen.permissions?.push ? { id: seen.id, name: seen.full_name } : null)),
+    Effect.orElseSucceed(() => null),
   )
 
 type Blob = { text: string } | null
@@ -513,7 +513,7 @@ type Node = {
   workflow: Blob
 }
 
-const MINE = `{ viewer { repositories(first: 100, isFork: true, ownerAffiliations: [OWNER, ORGANIZATION_MEMBER], orderBy: { field: PUSHED_AT, direction: DESC }) {
+const MINE = `{ viewer { repositories(first: 100, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: PUSHED_AT, direction: DESC }) {
   nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
     config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
     workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
@@ -521,7 +521,6 @@ const MINE = `{ viewer { repositories(first: 100, isFork: true, ownerAffiliation
 
 const PUSH = ["ADMIN", "MAINTAIN", "WRITE"]
 
-/* Your autoforks you can push to: only those show their spend */
 export const mine = (user: User) =>
   GitHub.request<{ data?: { viewer: { repositories: { nodes: Node[] } } } }>(user.token, "POST", "/graphql", { query: MINE }).pipe(
     Effect.map(({ data }) =>
@@ -562,7 +561,6 @@ export const settings = (user: User, owner: string, name: string) =>
 
 const fine = (limit: number) => Number.isFinite(limit) && limit >= 0 && limit <= 100_000
 
-/* Settings live in the fork's repo, so the fork runs the same with or without the site: saving them is one commit */
 export const saveSettings = (user: User, owner: string, name: string, wanted: Settings) =>
   Effect.gen(function* () {
     const { rebuilds, month, rebuild } = wanted.limits
@@ -577,11 +575,16 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       if (!workflow || now.cron === null) return yield* new Problem({ message: "This fork's autofork.yml has no schedule to change." })
       files.push({ path: ".github/workflows/autofork.yml", content: withCron(workflow, wanted.cron) })
     }
-    if (files.length) yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files)
+    if (files.length)
+      yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files).pipe(
+        Effect.catchIf(
+          (error) => error.status === 403 || error.status === 404,
+          problem(`Install autofork on ${owner}/${name} to change its settings here, or edit .autofork/config.json in the repo.`),
+        ),
+      )
     return readSettings(nextConfig, files.some((file) => file.path.endsWith("autofork.yml")) ? withCron(workflow!, wanted.cron!) : workflow)
   })
 
-/* GitHub's install page with this fork ticked: installing autofork's App on it is what links it */
 export const installLink = (user: User, owner: string, name: string, slug: string) =>
   GitHub.request<GitHubRepo & { id: number; owner: { id: number } }>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
     Effect.map((repo) => {

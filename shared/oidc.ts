@@ -32,7 +32,6 @@ const bytes = (part: string) => Uint8Array.from(atob(part.replace(/-/g, "+").rep
 
 export class Refused extends Error {}
 
-/* A GitHub Actions OIDC token for audience "autofork", from a fork's autofork.yml and never from a pull request */
 export const verifyOidc = async (authorization: string | null | undefined): Promise<Claims> => {
   const jwt = authorization?.replace(/^Bearer\s+/i, "") ?? ""
   const [head = "", body = "", signature = ""] = jwt.split(".")

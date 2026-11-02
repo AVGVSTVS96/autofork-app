@@ -22,10 +22,15 @@ export const totals = internalQuery({
   },
 })
 
+const PER_RUN = 50
+
 export const open = internalMutation({
   args: { repoId: v.number(), name: v.string(), runId: v.number(), patch: v.string(), agent: v.string(), cap: v.number() },
-  handler: (ctx, row) =>
-    ctx.db.insert("rebuilds", { ...row, cost: row.cap, model: null, inputTokens: null, outputTokens: null, status: "running", endedAt: null }),
+  handler: async (ctx, row) => {
+    const month = await thisMonth(ctx, row.repoId)
+    if (month.filter((rebuild) => rebuild.runId === row.runId).length >= PER_RUN) return null
+    return ctx.db.insert("rebuilds", { ...row, cost: row.cap, model: null, inputTokens: null, outputTokens: null, status: "running", endedAt: null })
+  },
 })
 
 export const close = internalMutation({

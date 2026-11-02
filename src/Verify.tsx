@@ -3,7 +3,6 @@ import { Nav, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/verify")
 
-/* WorkOS checks each new account's email once, even when GitHub already has */
 export const VerifyRoute = () => {
   const { email, error } = route.useSearch()
   useTitle("Check your email · autofork")

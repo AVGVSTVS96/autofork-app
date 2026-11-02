@@ -5,7 +5,7 @@ import type { MyFork } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
 import { Live, money, type Spend, useSpend } from "./live.tsx"
-import { Meter } from "./Spend.tsx"
+import { Meter, SignInAgain } from "./Spend.tsx"
 import { Nav, Retry, useTitle } from "./ui.tsx"
 
 const Row = ({ fork, spend }: { fork: MyFork; spend: Spend | undefined }) => {
@@ -41,6 +41,7 @@ const Forks = () => {
   const spend = useSpend()
   if (AsyncResult.isFailure(mine)) return <Retry className="note" message={client.failure(mine.cause)} onRetry={retry} />
   if (!AsyncResult.isSuccess(mine)) return <p className="note wait">Loading your forks…</p>
+  if (spend === null) return <SignInAgain back="/forks" />
   if (!mine.value.length) return <p className="note">Forks you make on autofork show up here, with what each one's rebuilds cost.</p>
   const total = spend?.reduce((sum, fork) => sum + fork.spent, 0) ?? 0
   return (

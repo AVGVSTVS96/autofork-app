@@ -1,35 +1,19 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
-import type { MutationCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { cronLine } from "../shared/settings"
-import { file, GitHubError, installationToken, repoInstallation, request } from "./github"
+import { file, installationToken, repoInstallation, request } from "./github"
 
 const repoOf = (upstream: string) => upstream.match(/^(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?$/)?.[1] ?? null
 
-const exists = (token: string, path: string) =>
-  request(token, "GET", path).then(
-    () => true,
-    (error) => {
-      if (error instanceof GitHubError && (error.status === 404 || error.status === 409)) return false
-      throw error
-    },
-  )
-
-/* What to ask GitHub to learn that the fork has something new to follow, the way the engine picks what to follow */
-const watchFor = async (token: string, upstream: string, follow: string | undefined) => {
+export const watchFor = (upstream: string, follow: string | undefined) => {
   const repo = repoOf(upstream)
   if (!repo) return null
-  if (follow?.includes("*")) return `repos/${repo}/releases?per_page=1`
-  if (follow && follow !== "releases") return `repos/${repo}/git/ref/heads/${follow}`
-  if (await exists(token, `repos/${repo}/releases/latest`)) return `repos/${repo}/releases/latest`
-  if (follow === "releases" || (await request<unknown[]>(token, "GET", `repos/${repo}/git/matching-refs/tags`)).body.length)
-    return `repos/${repo}/git/matching-refs/tags`
-  const { body } = await request<{ default_branch: string }>(token, "GET", `repos/${repo}`)
-  return `repos/${repo}/git/ref/heads/${body.default_branch}`
+  if (follow?.includes("*")) return `${repo} channel`
+  if (follow && follow !== "releases") return `${repo} branch ${follow}`
+  return `${repo} releases`
 }
 
-/* Makes the fork's row match GitHub: linked while autofork's App is installed on it and it has an .autofork/config.json */
 export const refresh = internalAction({
   args: { name: v.string() },
   handler: async (ctx, args): Promise<{ linked: boolean; cron: string | null }> => {
@@ -50,7 +34,7 @@ export const refresh = internalAction({
     try {
       settings = config ? JSON.parse(config) : undefined
     } catch {}
-    if (typeof settings?.upstream !== "string") {
+    if (typeof settings?.upstream !== "string" || workflow === null) {
       await ctx.runMutation(internal.forks.unlink, { name })
       return { linked: false, cron: null }
     }
@@ -63,18 +47,12 @@ export const refresh = internalAction({
       installationId,
       upstream: settings.upstream,
       follow: follow ?? "releases",
-      watch: await watchFor(token, settings.upstream, follow),
+      watch: watchFor(settings.upstream, follow),
       cron,
     })
     return { linked: true, cron }
   },
 })
-
-const forget = async (ctx: MutationCtx, watch: string | null) => {
-  if (!watch || (await ctx.db.query("forks").withIndex("watch", (q) => q.eq("watch", watch)).first())) return
-  const row = await ctx.db.query("watches").withIndex("path", (q) => q.eq("path", watch)).unique()
-  if (row) await ctx.db.delete(row._id)
-}
 
 export const save = internalMutation({
   args: {
@@ -88,36 +66,41 @@ export const save = internalMutation({
     cron: v.union(v.string(), v.null()),
   },
   handler: async (ctx, fork) => {
+    for (const stale of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", fork.name)).collect())
+      if (stale.repoId !== fork.repoId) await ctx.db.delete(stale._id)
     const row = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", fork.repoId)).unique()
-    if (row) await ctx.db.replace(row._id, fork)
+    if (row) await ctx.db.replace(row._id, { ...fork, ...(row.watch === fork.watch && row.seen ? { seen: row.seen } : {}) })
     else await ctx.db.insert("forks", fork)
-    if (fork.watch && !(await ctx.db.query("watches").withIndex("path", (q) => q.eq("path", fork.watch!)).unique()))
-      await ctx.db.insert("watches", { path: fork.watch, etag: null })
-    if (row && row.watch !== fork.watch) await forget(ctx, row.watch)
   },
 })
 
 export const unlink = internalMutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
-    const row = await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).unique()
-    if (!row) return
-    await ctx.db.delete(row._id)
-    await forget(ctx, row.watch)
+    for (const row of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).collect()) await ctx.db.delete(row._id)
   },
 })
 
 export const unlinkInstallation = internalMutation({
   args: { installationId: v.number() },
   handler: async (ctx, { installationId }) => {
-    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) {
-      await ctx.db.delete(row._id)
-      await forget(ctx, row.watch)
-    }
+    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) await ctx.db.delete(row._id)
   },
 })
 
 export const byName = internalQuery({
   args: { name: v.string() },
   handler: (ctx, { name }) => ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).unique(),
+})
+
+/* /api/link is open to anyone and polled, so a fork with no row is checked against GitHub at most every 30 seconds */
+export const mayCheck = internalMutation({
+  args: { name: v.string() },
+  handler: async (ctx, { name }) => {
+    const row = await ctx.db.query("checks").withIndex("name", (q) => q.eq("name", name)).unique()
+    if (row && Date.now() - row.at < 30_000) return false
+    if (row) await ctx.db.patch(row._id, { at: Date.now() })
+    else await ctx.db.insert("checks", { name, at: Date.now() })
+    return true
+  },
 })

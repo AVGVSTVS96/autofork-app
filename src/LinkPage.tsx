@@ -14,7 +14,6 @@ const check = async (owner: string, name: string): Promise<Linked> => {
   return response.ok ? response.json() : { error: "Couldn't reach autofork. Try again in a moment." }
 }
 
-/* Where `autofork link` sends you: sign in with GitHub, install autofork's App on the fork, and it runs on time */
 export const LinkRoute = () => {
   const { owner, name } = route.useParams()
   const { error } = route.useSearch()

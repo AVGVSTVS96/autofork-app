@@ -192,7 +192,7 @@ button:disabled { opacity: .4; cursor: default; }
 .start .note.retry, .fork .note.retry { margin-top: 28px; font-size: 17px; }
 .fine { font-size: 14px; line-height: 1.45; color: var(--ink-3); max-width: 50ch; }
 .wait { display: inline-flex; align-items: center; gap: 12px; color: var(--ink-2); }
-.wait::before, .item.now > i { content: ""; width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--you); box-shadow: 0 0 0 4px var(--you-soft); animation: pulse 1.6s ease-in-out infinite; }
+.wait:not(.item)::before, .item.now > i { content: ""; width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--you); box-shadow: 0 0 0 4px var(--you-soft); animation: pulse 1.6s ease-in-out infinite; }
 .fine.wait { color: var(--ink-3); }
 @keyframes pulse { 50% { box-shadow: 0 0 0 7px transparent; } }
 
@@ -666,7 +666,7 @@ nav .links > :last-child { view-transition-name: me; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   html { scroll-behavior: auto; }
   .graph .draw, .graph .dot-in, .graph .grow-in, .graph-tag, .rel, .rel *, .rel *::after, .wire .fill, .lineage * { transition: none !important; animation: none !important; }
-  .wait::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick, .ask .chip, .spin, .fork > * { animation: none; }
+  .wait:not(.item)::before, .item.now > i, .caret, .sk, .chip i, .arrive, .pick, .ask .chip, .spin, .fork > * { animation: none; }
   .menu, .account.open .menu { scale: none; translate: none; }
   .menu-sk { animation: none; }
   button:active:not(:disabled), .btn:active, .ask button:active:not(:disabled), .signin .btn:active { transform: none; }
@@ -683,7 +683,6 @@ nav .links > :last-child { view-transition-name: me; }
   .t3 { border-color: var(--hair); }
 }
 
-/* spend and settings, for people who can push to the fork */
 .spend, .settings { padding: 18px 22px; }
 .meter { display: block; height: 6px; margin: 2px 0 10px; border-radius: 3px; background: var(--tint); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: inherit; background: var(--you); transition: width .4s var(--out); }

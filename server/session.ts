@@ -15,7 +15,6 @@ export type User = {
   readonly expires: number
 }
 
-/* The WorkOS session: who the autofork account is, and the token Convex checks */
 export type Account = { readonly id: string; readonly access: string; readonly refresh: string }
 
 export type Session = {
