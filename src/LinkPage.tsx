@@ -7,7 +7,14 @@ import { Nav, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/link/$owner/$name")
 
-type Linked = { linked: boolean; cron: string | null } | { error: string; final?: boolean }
+type Linked = { linked: boolean; cron: string | null; why?: keyof typeof WHY } | { error: string; final?: boolean }
+
+const WHY = {
+  "not installed": null,
+  "no config": "autofork is installed, but the default branch has no .autofork/config.json with an upstream. Push it and this page picks it up.",
+  "no workflow": "autofork is installed, but the default branch has no .github/workflows/autofork.yml. Push it and this page picks it up.",
+  "not on GitHub": "This fork's upstream isn't on GitHub, so autofork can't watch it. It keeps running on GitHub's schedule.",
+}
 
 const check = async (owner: string, name: string): Promise<Linked> => {
   try {
@@ -71,6 +78,7 @@ export const LinkRoute = () => {
               </a>
             </p>
             {state && "error" in state ? <p className="bad">{state.error}</p> : null}
+            {state && "why" in state && state.why && WHY[state.why] ? <p className="bad">{WHY[state.why]}</p> : null}
             {error ? <p className="bad">{error}</p> : null}
             <p className="fine">Push your fork's .autofork/config.json and .github/workflows/autofork.yml first. To unlink, remove the app from the repo on GitHub.</p>
           </>

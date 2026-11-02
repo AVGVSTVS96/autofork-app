@@ -137,12 +137,14 @@ export const tick = internalAction({
       due.filter(({ fork, now }) => fork.seen !== null && now !== ""),
       async ({ fork, watch, now }) => {
         const token = await installationToken(fork.installationId).catch((error) => console.warn(`no token for ${fork.name}: ${error}`))
-        if (!token) return
+        if (!token) return void (await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {}))
         const dispatch = () => request(token, "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
         try {
-          /* GitHub disables a quiet public repo's scheduled workflows after 60 days; switch it back on */
+          /* GitHub disables a quiet public repo's scheduled workflows after 60 days; switch those back on, never one its owner turned off */
           await dispatch().catch(async (error) => {
             if (!(error instanceof GitHubError && error.status === 422 && /disabled/i.test(error.message))) throw error
+            const { body } = await request<{ state: string }>(token, "GET", `repos/${fork.name}/actions/workflows/autofork.yml`)
+            if (body.state !== "disabled_inactivity") throw error
             await request(token, "PUT", `repos/${fork.name}/actions/workflows/autofork.yml/enable`)
             await dispatch()
           })

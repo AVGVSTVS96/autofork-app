@@ -292,7 +292,7 @@ const convexToken = (fresh: boolean) => Effect.gen(function* () {
   const renewed = yield* Effect.promise(() => renewals.get(account.refresh)!)
   if (Exit.isFailure(renewed)) {
     const error = Cause.squash(renewed.cause)
-    if (error instanceof GitHub.GitHubError && (error.status === 0 || error.status >= 500)) {
+    if (error instanceof GitHub.GitHubError && (error.status === 0 || error.status === 429 || error.status >= 500)) {
       renewals.delete(account.refresh)
       return yield* Effect.die(error)
     }

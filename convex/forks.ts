@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
+import type { MutationCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { cronLine } from "../shared/settings"
 import { file, installationToken, repoInstallation, request } from "./github"
@@ -19,16 +20,18 @@ export const watchFor = (upstream: string, given: string | undefined) => {
   return `${repo} releases`
 }
 
+type Linked = { linked: true; cron: string | null } | { linked: false; cron: null; why: "not installed" | "no config" | "no workflow" | "not on GitHub" }
+
 export const refresh = internalAction({
   args: { name: v.string() },
-  handler: async (ctx, args): Promise<{ linked: boolean; cron: string | null }> => {
+  handler: async (ctx, args): Promise<Linked> => {
     const name = args.name.toLowerCase()
     const readAt = Date.now()
     const [owner = "", repo = ""] = name.split("/")
     const installationId = await repoInstallation(owner, repo)
     if (!installationId) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null }
+      return { linked: false, cron: null, why: "not installed" }
     }
     const token = await installationToken(installationId)
     const { body: found } = await request<{ id: number; full_name: string; default_branch: string }>(token, "GET", `repos/${name}`)
@@ -42,13 +45,13 @@ export const refresh = internalAction({
     } catch {}
     if (typeof settings?.upstream !== "string" || workflow === null) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null }
+      return { linked: false, cron: null, why: typeof settings?.upstream === "string" ? "no workflow" : "no config" }
     }
     const follow = typeof settings.follow === "string" ? settings.follow : undefined
     const watch = watchFor(settings.upstream, follow)
     if (!watch) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
-      return { linked: false, cron: null }
+      return { linked: false, cron: null, why: "not on GitHub" }
     }
     const cron = cronLine(workflow)
     await ctx.runMutation(internal.forks.save, {
@@ -84,23 +87,37 @@ export const save = internalMutation({
       if (stale.repoId !== fork.repoId) await ctx.db.delete(stale._id)
     const row = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", fork.repoId)).unique()
     if (row && (row.readAt ?? 0) > fork.readAt) return
+    const gone = await ctx.db.query("gone").withIndex("name", (q) => q.eq("name", fork.name)).unique()
+    if (gone && gone.at > fork.readAt) return
+    if (gone) await ctx.db.delete(gone._id)
     if (row) await ctx.db.replace(row._id, { ...fork, ...(row.watch === fork.watch && row.seen ? { seen: row.seen } : {}) })
     else await ctx.db.insert("forks", fork)
   },
 })
+
+/* Unlinking leaves a mark, so a refresh that read GitHub before it can't bring the row back */
+const forget = async (ctx: MutationCtx, name: string, at: number) => {
+  const gone = await ctx.db.query("gone").withIndex("name", (q) => q.eq("name", name)).unique()
+  if (!gone) await ctx.db.insert("gone", { name, at })
+  else if (gone.at < at) await ctx.db.patch(gone._id, { at })
+}
 
 export const unlink = internalMutation({
   args: { name: v.string(), readAt: v.optional(v.number()) },
   handler: async (ctx, { name, readAt = Date.now() }) => {
     for (const row of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).collect())
       if ((row.readAt ?? 0) <= readAt) await ctx.db.delete(row._id)
+    await forget(ctx, name, readAt)
   },
 })
 
 export const unlinkInstallation = internalMutation({
   args: { installationId: v.number() },
   handler: async (ctx, { installationId }) => {
-    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) await ctx.db.delete(row._id)
+    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) {
+      await ctx.db.delete(row._id)
+      await forget(ctx, row.name, Date.now())
+    }
   },
 })
 

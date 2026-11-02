@@ -10,10 +10,10 @@ const token = async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
   for (let attempt = 0; ; attempt++) {
     try {
       const response = await fetch(`/api/auth/token${forceRefreshToken ? "?fresh=1" : ""}`)
-      if (response.status === 401 && attempt > 0) return null
+      if (response.status === 401 && attempt > 2) return null
       if (response.ok) return ((await response.json()) as { token: string }).token
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1000 * 2 ** attempt)))
+    await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1000 * 2 ** attempt) * (0.5 + Math.random())))
   }
 }
 

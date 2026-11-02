@@ -11,9 +11,24 @@ export const allow = internalMutation({
   handler: async (ctx, { user, repos, mode }) => {
     const row = await ctx.db.query("access").withIndex("user", (q) => q.eq("user", user)).unique()
     const others = (row?.repos ?? []).filter((repo) => !repos.some((given) => given.id === repo.id || given.name === repo.name))
-    const next = mode === "replace" ? repos : mode === "add" ? [...others, ...repos] : others
+    const confirmed = repos.map((repo) => ({ ...repo, at: Date.now() }))
+    const next = mode === "replace" ? confirmed : mode === "add" ? [...others, ...confirmed] : others
     if (row) await ctx.db.patch(row._id, { repos: next })
     else await ctx.db.insert("access", { user, repos: next })
+  },
+})
+
+const DAY = 86_400_000
+
+/* A grant GitHub hasn't confirmed in a day goes, so losing push access ends spend access even if that person never comes back */
+export const prune = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    for (const row of await ctx.db.query("access").collect()) {
+      const fresh = row.repos.filter((repo) => (repo.at ?? 0) > Date.now() - DAY)
+      if (fresh.length !== row.repos.length) await ctx.db.patch(row._id, { repos: fresh })
+    }
+    for (const old of await ctx.db.query("gone").collect()) if (old.at < Date.now() - DAY) await ctx.db.delete(old._id)
   },
 })
 

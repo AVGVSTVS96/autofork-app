@@ -10,7 +10,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const fork = async (request: Request) => {
   const claims = await verifyOidc(request.headers.get("authorization"))
-  return { repoId: Number(claims.repository_id), name: claims.repository.toLowerCase(), runId: Number(claims.run_id) }
+  return { repoId: Number(claims.repository_id), name: claims.repository.toLowerCase(), runId: Number(claims.run_id), attempt: Number(claims.run_attempt) || 1 }
 }
 
 const guarded = (handle: (ctx: ActionCtx, request: Request) => Promise<Response>) =>
@@ -111,7 +111,7 @@ http.route({
     const hook = JSON.parse(body) as Hook
     const refresh = (repos: { full_name: string }[] = []) =>
       Promise.all(repos.map((repo) => ctx.scheduler.runAfter(0, internal.forks.refresh, { name: repo.full_name })))
-    if (event === "installation" && (hook.action === "deleted" || hook.action === "suspend") && hook.installation)
+    if (event === "installation" && hook.action === "deleted" && hook.installation)
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)
     else if (event === "installation_repositories") await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? [])])

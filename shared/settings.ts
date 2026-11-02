@@ -2,6 +2,8 @@ import { LIMITS, type Limits, type Settings } from "./api.ts"
 
 const CRON = /^([ \t]*-[ \t]*cron:[ \t]*)(["']?)([^"'\s#](?:[^"'\n#]*[^"'\s#])?)\2([ \t]*(?:#.*)?)$/m
 
+export const cronLines = (workflow: string) => workflow.match(new RegExp(CRON.source, "gm"))?.length ?? 0
+
 export const cronLine = (workflow: string | null) => workflow?.match(CRON)?.[3]?.trim() ?? null
 
 export const withCron = (workflow: string, cron: string) => workflow.replace(CRON, (_, head: string, _quote, _old, tail: string) => `${head}"${cron}"${tail}`)

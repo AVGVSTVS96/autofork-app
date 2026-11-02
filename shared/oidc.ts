@@ -2,7 +2,7 @@ const ISSUER = "https://token.actions.githubusercontent.com"
 
 type Jwk = JsonWebKey & { kid: string }
 
-export type Claims = { repository: string; repository_id: string; run_id: string }
+export type Claims = { repository: string; repository_id: string; run_id: string; run_attempt: string }
 
 let keys: Promise<Jwk[]> | undefined
 let fetched = 0
@@ -61,5 +61,5 @@ export const verifyOidc = async (authorization: string | null | undefined): Prom
   if (text("event_name").startsWith("pull_request")) throw new Refused("not from pull requests")
   if (!text("repository") || !text("workflow_ref").startsWith(`${text("repository")}/.github/workflows/autofork.yml@`))
     throw new Refused("only the autofork workflow can ask")
-  return { repository: text("repository"), repository_id: text("repository_id"), run_id: text("run_id") }
+  return { repository: text("repository"), repository_id: text("repository_id"), run_id: text("run_id"), run_attempt: text("run_attempt") }
 }

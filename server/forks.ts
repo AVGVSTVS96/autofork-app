@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
-import { parses, readSettings, withCron, withSettings } from "../shared/settings.ts"
+import { cronLines, parses, readSettings, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -515,7 +515,7 @@ type Node = {
   workflow: Blob
 }
 
-const MINE = `query($after: String) { viewer { repositories(first: 100, after: $after, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: PUSHED_AT, direction: DESC }) {
+const MINE = `query($after: String) { viewer { repositories(first: 100, after: $after, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: CREATED_AT, direction: DESC }) {
   nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
     config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
     workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
@@ -598,6 +598,8 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
     const { repo, config, workflow } = yield* pushable(user, owner, name)
     if (!parses(config)) return yield* new Problem({ message: `${owner}/${name}'s .autofork/config.json isn't valid JSON. Fix it in the repo first.` })
     const now = readSettings(config, workflow)
+    if (workflow && cronLines(workflow) > 1 && wanted.cron !== now.cron)
+      return yield* new Problem({ message: "This fork's autofork.yml has more than one schedule. Change it in the repo." })
     if (wanted.cron !== null && wanted.cron !== now.cron && !/^[\d*/,-]+( [\d*/,-]+){4}$/.test(wanted.cron))
       return yield* new Problem({ message: "That isn't a cron schedule." })
     const files: GitHub.File[] = []

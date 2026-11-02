@@ -42,7 +42,7 @@ const aes = Effect.gen(function* () {
   )
 })
 
-const encrypt = (session: Session) =>
+const encrypt = (session: Session | Saved) =>
   Effect.gen(function* () {
     const key = yield* aes
     const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -50,34 +50,41 @@ const encrypt = (session: Session) =>
     return Buffer.concat([iv, new Uint8Array(sealed)]).toString("base64url")
   })
 
-const decrypt = (cookie: string) =>
+const decrypt = <A = Session>(cookie: string) =>
   Effect.gen(function* () {
     const key = yield* aes
     const bytes = Buffer.from(cookie, "base64url")
     const plain = yield* Effect.tryPromise(() => crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, 12) }, key, bytes.subarray(12)))
-    return JSON.parse(new TextDecoder().decode(plain)) as Session
-  }).pipe(Effect.orElseSucceed((): Session => ({})))
+    return JSON.parse(new TextDecoder().decode(plain)) as A
+  }).pipe(Effect.orElseSucceed(() => ({}) as A))
 
 const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: "30 days" } as const
 
+type Saved = { account?: Account; user?: number }
+
 const fromCookies = Effect.gen(function* () {
   const { cookies } = yield* HttpServerRequest.HttpServerRequest
-  const main = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
-  const { account } = cookies[ACCOUNT] ? yield* decrypt(cookies[ACCOUNT]) : main
-  return { ...main, account: main.user ? account : undefined }
+  const main: Session = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
+  const saved: Saved = cookies[ACCOUNT] ? yield* decrypt<Saved>(cookies[ACCOUNT]) : { account: main.account, user: main.user?.id }
+  return { main, saved }
 })
 
-export const read = fromCookies
+export const read = Effect.map(fromCookies, ({ main, saved }): Session => ({
+  ...main,
+  account: main.user && saved.user === main.user.id ? saved.account : undefined,
+}))
 
-/* The WorkOS tokens live in their own cookie, and each cookie is only sent back when it changed, so a request that renews them and
-   one that changes something else can't put back each other's old copy. They only count while the GitHub user is signed in. */
+/* The WorkOS tokens live in their own cookie, tied to the GitHub user they came with, and each cookie is only sent back when it changed,
+   so a request that renews them and one that changes something else can't put back each other's old copy */
 export const write = (session: Session) =>
   Effect.gen(function* () {
     const { account, ...rest } = session
-    const { account: before, ...restBefore } = yield* fromCookies
+    const { main, saved } = yield* fromCookies
+    const { account: _, ...restBefore } = main
+    const next: Saved = account ? { account, user: rest.user?.id } : {}
     const changes: [string, string][] = []
     if (JSON.stringify(rest) !== JSON.stringify(restBefore)) changes.push([COOKIE, yield* encrypt(rest)])
-    if (JSON.stringify(account) !== JSON.stringify(before)) changes.push([ACCOUNT, yield* encrypt({ account })])
+    if (JSON.stringify(next) !== JSON.stringify(saved)) changes.push([ACCOUNT, yield* encrypt(next)])
     yield* HttpEffect.appendPreResponseHandler((_request, response) =>
       Effect.succeed(changes.reduce((answer, [name, value]) => HttpServerResponse.setCookieUnsafe(answer, name, value, COOKIE_OPTIONS), response)),
     )
