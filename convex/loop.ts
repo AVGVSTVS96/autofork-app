@@ -124,6 +124,8 @@ const read = async (asks: Map<number, Set<string>>) => {
       const failed = new Set(
         (body.errors ?? []).filter((error) => error.path?.length === 1 || !["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")).map((error) => error.path?.[0]),
       )
+      /* An error that names no upstream (a timeout, say) may have nulled any of them */
+      if ((body.errors ?? []).some((error) => !error.path?.length)) return void console.warn(`installation ${installationId}: GitHub's answer had an error for no one upstream`)
       if (body.data)
         keys.forEach((key, index) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
@@ -174,12 +176,20 @@ export const tick = internalAction({
     await pool(
       due.filter(({ fork, now }) => fork.seen !== null && now !== ""),
       async ({ fork, watch, now }) => {
-        const token = await installationToken(fork.installationId).catch((error) => console.warn(`no token for ${fork.name}: ${error}`))
-        if (!token) return void (await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {}))
+        const minted = await installationToken(fork.installationId).catch((error) => void console.warn(`no token for ${fork.name}: ${error}`))
+        if (!minted) return void (await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {}))
+        let token: string = minted
         const dispatch = () => request(token, "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
         try {
+          /* A token minted before this fork joined the installation can't see it, so a refusal gets one fresh token */
+          const started = dispatch().catch(async (error) => {
+            if (!(error instanceof GitHubError && (error.status === 403 || error.status === 404))) throw error
+            dropToken(fork.installationId)
+            token = await installationToken(fork.installationId)
+            return dispatch()
+          })
           /* GitHub disables a quiet public repo's scheduled workflows after 60 days; switch those back on, never one its owner turned off */
-          await dispatch().catch(async (error) => {
+          await started.catch(async (error) => {
             if (!(error instanceof GitHubError && error.status === 422 && /disabled/i.test(error.message))) throw error
             const { body } = await request<{ state: string }>(token, "GET", `repos/${fork.name}/actions/workflows/autofork.yml`)
             if (body.state !== "disabled_inactivity") throw error

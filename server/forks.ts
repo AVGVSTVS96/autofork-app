@@ -599,10 +599,6 @@ const fine = (limit: number) => Number.isFinite(limit) && limit >= 0 && limit <=
 
 export const saveSettings = (user: User, owner: string, name: string, wanted: Settings) =>
   Effect.gen(function* () {
-    const { rebuilds, month, rebuild } = wanted.limits
-    if (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds)) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
-    if (rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
-    if (rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const { repo, head, config, workflow } = yield* pushable(user, owner, name)
     if (wanted.head && wanted.head !== head) {
       const [loadedConfig, loadedWorkflow] = yield* settingsAt(user, owner, name, wanted.head)
@@ -615,13 +611,19 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       return yield* new Problem({ message: "This fork's autofork.yml has more than one schedule. Change it in the repo." })
     if (wanted.cron !== null && wanted.cron !== now.cron && !Object.values(EVERY).includes(wanted.cron as never))
       return yield* new Problem({ message: "Pick one of the schedules, or set another in autofork.yml." })
+    /* Limits are only checked, and only written, when they change, so a save of the schedule or follow keeps whatever the repo says */
+    const newLimits = JSON.stringify(now.limits) !== JSON.stringify(wanted.limits)
+    const { rebuilds, month, rebuild } = wanted.limits
+    if (newLimits && (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds))) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
+    if (newLimits && rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
+    if (newLimits && rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const files: GitHub.File[] = []
-    const unchanged = now.follow === wanted.follow.trim() && JSON.stringify(now.limits) === JSON.stringify(wanted.limits)
+    const unchanged = now.follow === wanted.follow.trim() && !newLimits
     if (!unchanged && !readableFollow(config))
       return yield* new Problem({ message: `${owner}/${name}'s "follow" in .autofork/config.json isn't text. Fix it in the repo first.` })
-    if (!unchanged && !readableLimits(config))
+    if (newLimits && !readableLimits(config))
       return yield* new Problem({ message: `${owner}/${name}'s "limits" in .autofork/config.json aren't numbers autofork can read. Fix them in the repo first.` })
-    const nextConfig = unchanged ? config : withSettings(config, wanted)
+    const nextConfig = unchanged ? config : withSettings(config, { follow: wanted.follow, limits: newLimits ? wanted.limits : undefined })
     if (!unchanged) files.push({ path: ".autofork/config.json", content: nextConfig })
     if (wanted.cron && wanted.cron !== now.cron) {
       if (!workflow || now.cron === null) return yield* new Problem({ message: "This fork's autofork.yml has no schedule to change." })

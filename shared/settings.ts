@@ -56,8 +56,8 @@ export const readableFollow = (config: string | null) => {
   return follow === undefined || typeof follow === "string"
 }
 
-export const withSettings = (config: string | null, { follow, limits }: Pick<Settings, "follow" | "limits">) => {
-  const { follow: _, ...rest } = parse(config)
-  const merged = { ...(object(rest.limits) ? rest.limits : {}), ...limits }
-  return `${JSON.stringify({ ...rest, ...(follow.trim() ? { follow: follow.trim() } : {}), limits: merged }, null, 2)}\n`
+export const withSettings = (config: string | null, { follow, limits }: { follow: string; limits?: Limits }) => {
+  const { follow: _, limits: before, ...rest } = parse(config)
+  const merged = limits ? { ...(object(before) ? before : {}), ...limits } : before
+  return `${JSON.stringify({ ...rest, ...(follow.trim() ? { follow: follow.trim() } : {}), ...(merged === undefined ? {} : { limits: merged }) }, null, 2)}\n`
 }
