@@ -45,7 +45,7 @@ type Found = {
   releases: { nodes: { tagName: string }[] }
   refs: { nodes: { name: string; target: { oid: string } | null }[] } | null
   defaultBranchRef: { target: { oid: string } | null } | null
-  ref?: { target: { oid: string; committedDate?: string; statusCheckRollup?: { state: string } | null } | null } | null
+  ref?: { target: { oid: string; statusCheckRollup?: { state: string } | null } | null } | null
 } | null
 
 const fields = (key: string) => {
@@ -57,7 +57,7 @@ const fields = (key: string) => {
     releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName } }
     refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name target { oid } } }
     defaultBranchRef { target { oid } }
-    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { committedDate statusCheckRollup { state } } } }` : ""}
+    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { statusCheckRollup { state } } } }` : ""}
   }`
 }
 
@@ -67,13 +67,15 @@ const mark = (key: string, found: Found) => {
   /* A moving tag like `nightly` keeps its name, so where it points is part of the mark */
   const newest = found.refs?.nodes[0]
   const tag = newest && `${newest.name}@${newest.target?.oid ?? ""}`
-  /* The engine builds a branch's newest commit whose checks passed (or that has none), so a tip still running or failing its checks isn't news yet */
+  /* The engine builds a branch's newest commit whose checks passed (or that has none), so a tip still running or failing its checks isn't news yet;
+     a tip with no checks is, and again if checks attach to it later and pass */
   if (kind === "branch") {
     const target = found.ref?.target
-    const state = target?.statusCheckRollup?.state
-    /* A commit pushed moments ago may not have its checks attached yet */
-    const settling = !state && Date.now() - Date.parse(target?.committedDate ?? "") < 120_000
-    return (settling || (state && state !== "SUCCESS")) && !key.endsWith(" any") ? undefined : (target?.oid ?? null)
+    if (!target) return null
+    const state = target.statusCheckRollup?.state
+    if (key.endsWith(" any")) return target.oid
+    if (!state) return `${target.oid} unchecked`
+    return state === "SUCCESS" ? target.oid : undefined
   }
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
   return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target?.oid ?? null
@@ -111,7 +113,7 @@ const read = async (asks: Map<number, Set<string>>) => {
     const all = [...keys]
     return Array.from({ length: Math.ceil(all.length / CHUNK) }, (_, at) => ({ installationId, keys: all.slice(at * CHUNK, (at + 1) * CHUNK) }))
   })
-  await pool(jobs, async ({ installationId, keys }) => {
+  const readChunk = async ({ installationId, keys }: { installationId: number; keys: string[] }): Promise<void> => {
     const query = `{ ${keys.map((key, index) => `w${index}: ${fields(key)}`).join("\n")} }`
     try {
       const { body } = await request<{ data?: Record<string, Found> | null; errors?: { path?: unknown[]; type?: string }[] }>(
@@ -124,8 +126,13 @@ const read = async (asks: Map<number, Set<string>>) => {
       const failed = new Set(
         (body.errors ?? []).filter((error) => error.path?.length === 1 || !["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")).map((error) => error.path?.[0]),
       )
-      /* An error that names no upstream (a timeout, say) may have nulled any of them */
-      if ((body.errors ?? []).some((error) => !error.path?.length)) return void console.warn(`installation ${installationId}: GitHub's answer had an error for no one upstream`)
+      /* An error that names no upstream (a timeout, say) may have nulled any of them, so the chunk is read again in halves to find the one to blame */
+      if ((body.errors ?? []).some((error) => !error.path?.length)) {
+        console.warn(`installation ${installationId}: GitHub's answer for ${keys.length} upstreams had an error for none of them`)
+        const half = Math.ceil(keys.length / 2)
+        if (keys.length > 1) await Promise.all([keys.slice(0, half), keys.slice(half)].map((part) => readChunk({ installationId, keys: part })))
+        return
+      }
       if (body.data)
         keys.forEach((key, index) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
@@ -134,7 +141,8 @@ const read = async (asks: Map<number, Set<string>>) => {
       if (error instanceof GitHubError && error.status === 401) dropToken(installationId)
       console.warn(`installation ${installationId} couldn't check ${keys.length} upstreams: ${error}`)
     }
-  })
+  }
+  await pool(jobs, readChunk)
   return found
 }
 

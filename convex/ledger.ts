@@ -30,8 +30,15 @@ export const open = internalMutation({
   args: { repoId: v.number(), name: v.string(), runId: v.number(), attempt: v.number(), patch: v.string(), agent: v.string(), cap: v.number() },
   handler: async (ctx, row) => {
     const month = await thisMonth(ctx, row.repoId)
-    /* A retried open of the same patch in the same run gets the row it already has */
-    const again = month.find((rebuild) => rebuild.status === "running" && rebuild.runId === row.runId && (rebuild.attempt ?? 1) === row.attempt && rebuild.patch === row.patch)
+    /* The engine waits 10 s for an answer, so the same patch opened again in the same run within 30 s is that open retried, and gets its row */
+    const again = month.find(
+      (rebuild) =>
+        rebuild.status === "running" &&
+        rebuild.runId === row.runId &&
+        (rebuild.attempt ?? 1) === row.attempt &&
+        rebuild.patch === row.patch &&
+        rebuild._creationTime > Date.now() - 30_000,
+    )
     if (again) return { id: again._id }
     if (month.length >= PER_MONTH) return { full: `autofork records up to ${PER_MONTH} rebuilds a fork a month` }
     if (month.filter((rebuild) => rebuild.runId === row.runId && (rebuild.attempt ?? 1) === row.attempt).length >= PER_RUN)
