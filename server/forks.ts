@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
 import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
-import { cronLines, parses, readSettings, withCron, withSettings } from "../shared/settings.ts"
+import { cronLines, parses, readableLimits, readSettings, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -535,7 +535,14 @@ const everyRepo = (token: string) =>
     let after: string | null = null
     let failed = false
     for (let page = 0; page < PAGES; page++) {
-      const { data, errors }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } })
+      /* A later page failing still leaves the pages read so far, marked incomplete */
+      const { data, errors }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } }).pipe(
+        Effect.catchIf(
+          () => page > 0,
+          () => Effect.succeed<Page>({}),
+        ),
+      )
+      if (!data && page > 0) return { nodes, complete: false }
       if (!data) return yield* new Problem({ message: `GitHub couldn't list your repositories${errors ? "" : " right now"}. Try again.` })
       failed ||= !!errors
       nodes.push(...data.viewer.repositories.nodes.filter((node): node is Node => node !== null))
@@ -610,6 +617,8 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       return yield* new Problem({ message: "Pick one of the schedules, or set another in autofork.yml." })
     const files: GitHub.File[] = []
     const unchanged = now.follow === wanted.follow.trim() && JSON.stringify(now.limits) === JSON.stringify(wanted.limits)
+    if (!unchanged && !readableLimits(config))
+      return yield* new Problem({ message: `${owner}/${name}'s "limits" in .autofork/config.json aren't numbers autofork can read. Fix them in the repo first.` })
     const nextConfig = unchanged ? config : withSettings(config, wanted)
     if (!unchanged) files.push({ path: ".autofork/config.json", content: nextConfig })
     if (wanted.cron && wanted.cron !== now.cron) {

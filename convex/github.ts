@@ -84,7 +84,7 @@ export const installationToken = async (installationId: number) => {
   return token
 }
 
-/* A token GitHub rejects before it expires (revoked, permissions changed) is minted again next time */
+/* The next call for this installation mints a new token */
 export const dropToken = (installationId: number) => void tokens.delete(installationId)
 
 export const repoInstallation = (owner: string, name: string) =>

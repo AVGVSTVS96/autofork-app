@@ -41,6 +41,15 @@ export const readSettings = (config: string | null, workflow: string | null): Se
   }
 }
 
+/* Limits the repo sets to something unreadable show as defaults, so saving over them would replace what the owner wrote */
+export const readableLimits = (config: string | null) => {
+  const { limits } = parse(config)
+  if (limits === undefined) return true
+  if (!object(limits)) return false
+  const read: Record<string, number> = readSettings(config, null).limits
+  return Object.keys(LIMITS).every((key) => !(key in limits) || limits[key] === read[key])
+}
+
 export const withSettings = (config: string | null, { follow, limits }: Pick<Settings, "follow" | "limits">) => {
   const { follow: _, ...rest } = parse(config)
   const merged = { ...(object(rest.limits) ? rest.limits : {}), ...limits }

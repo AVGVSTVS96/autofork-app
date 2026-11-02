@@ -3,7 +3,7 @@ import { internal } from "./_generated/api"
 import type { MutationCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { cronLine } from "../shared/settings"
-import { file, installationToken, repoInstallation, request } from "./github"
+import { dropToken, file, installationToken, repoInstallation, request } from "./github"
 
 const repoOf = (upstream: string) =>
   upstream
@@ -34,6 +34,8 @@ export const refresh = internalAction({
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
       return { linked: false, cron: null, open: false, why: "not installed" }
     }
+    /* A refresh follows installs and permission changes, which a cached token may not see yet */
+    dropToken(installationId)
     const token = await installationToken(installationId)
     const { body: found } = await request<{ id: number; full_name: string; default_branch: string; private: boolean }>(token, "GET", `repos/${name}`)
     const open = !found.private
