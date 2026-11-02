@@ -517,7 +517,8 @@ type Node = {
   workflow: Blob
 }
 
-const MINE = `query($after: String) { viewer { repositories(first: 100, after: $after, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: CREATED_AT, direction: DESC }) {
+/* Reading each repo's two files is most of the cost, so only forks are listed, 50 a page, to stay well inside GitHub's 10-second GraphQL limit */
+const MINE = `query($after: String) { viewer { repositories(first: 50, after: $after, isFork: true, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: CREATED_AT, direction: DESC }) {
   nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
     config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
     workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
@@ -529,7 +530,7 @@ type Page = {
   errors?: unknown[]
 }
 
-const PAGES = 10
+const PAGES = 20
 
 const everyRepo = (token: string) =>
   Effect.gen(function* () {
