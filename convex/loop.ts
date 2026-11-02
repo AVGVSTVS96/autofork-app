@@ -71,7 +71,7 @@ const mark = (key: string, found: Found) => {
   if (kind === "branch") {
     const target = found.ref?.target
     const state = target?.statusCheckRollup?.state
-    return state && state !== "SUCCESS" ? undefined : (target?.oid ?? null)
+    return state && state !== "SUCCESS" && !key.endsWith(" any") ? undefined : (target?.oid ?? null)
   }
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
   return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target?.oid ?? null
@@ -87,6 +87,8 @@ const markOf = (key: string, found: Found) => {
     return undefined
   }
 }
+
+const pick = (key: string, ids: number[]) => ids[[...key].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 0) % ids.length]!
 
 const CHUNK = 50
 const AT_ONCE = 10
@@ -142,7 +144,8 @@ export const tick = internalAction({
   handler: async (ctx) => {
     const watches = await allWatches(ctx)
     const first = new Map<number, Set<string>>()
-    const reader = new Map(watches.map((watch) => [watch.key, Math.min(...watch.forks.map((fork) => fork.installationId))]))
+    /* Each upstream is read by one of its forks' installations, picked by the upstream's name, so no one installation's GraphQL budget reads everyone's */
+    const reader = new Map(watches.map((watch) => [watch.key, pick(watch.key, [...new Set(watch.forks.map((fork) => fork.installationId))].sort((a, b) => a - b))]))
     for (const [key, installationId] of reader) ask(first, installationId, key)
     const shared = await read(first)
     const own = new Map<number, Set<string>>()

@@ -11,12 +11,13 @@ const repoOf = (upstream: string) =>
     .match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1]
     ?.toLowerCase() ?? null
 
-export const watchFor = (upstream: string, given: string | undefined) => {
+/* `green: false` follows a branch's tip whatever its checks say */
+export const watchFor = (upstream: string, given: string | undefined, green = true) => {
   const repo = repoOf(upstream)
   const follow = given?.trim()
   if (!repo) return null
   if (follow?.includes("*")) return `${repo} channel`
-  if (follow && follow !== "releases") return `${repo} branch ${follow}`
+  if (follow && follow !== "releases") return `${repo} branch ${follow}${green ? "" : " any"}`
   return `${repo} releases`
 }
 
@@ -40,7 +41,7 @@ export const refresh = internalAction({
       file(token, found.full_name, ".autofork/config.json", found.default_branch),
       file(token, found.full_name, ".github/workflows/autofork.yml", found.default_branch),
     ])
-    let settings: { upstream?: unknown; follow?: unknown } | undefined
+    let settings: { upstream?: unknown; follow?: unknown; green?: unknown } | undefined
     try {
       settings = config ? JSON.parse(config) : undefined
     } catch {}
@@ -49,7 +50,7 @@ export const refresh = internalAction({
       return { linked: false, cron: null, open, why: typeof settings?.upstream === "string" ? "no workflow" : "no config" }
     }
     const follow = typeof settings.follow === "string" ? settings.follow : undefined
-    const watch = watchFor(settings.upstream, follow)
+    const watch = watchFor(settings.upstream, follow, settings.green !== false)
     if (!watch) {
       await ctx.runMutation(internal.forks.unlink, { name, readAt })
       return { linked: false, cron: null, open, why: "not on GitHub" }
@@ -131,6 +132,13 @@ export const namesOn = internalQuery({
   args: { installationId: v.number() },
   handler: async (ctx, { installationId }) =>
     (await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()).map((row) => ({ full_name: row.name })),
+})
+
+export const uncheck = internalMutation({
+  args: { name: v.string() },
+  handler: async (ctx, { name }) => {
+    for (const row of await ctx.db.query("checks").withIndex("name", (q) => q.eq("name", name)).collect()) await ctx.db.delete(row._id)
+  },
 })
 
 export const byName = internalQuery({

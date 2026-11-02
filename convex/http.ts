@@ -89,6 +89,7 @@ http.route({
     if (row) return json({ linked: true, cron: row.open ? row.cron : null })
     if (!(await ctx.runMutation(internal.forks.mayCheck, { name: repo }))) return json({ linked: false, cron: null, checked: false })
     const found = await ctx.runAction(internal.forks.refresh, { name: repo }).catch(() => null)
+    if (!found) await ctx.runMutation(internal.forks.uncheck, { name: repo })
     if (!found) return json({ error: "GitHub didn't answer; try again in a minute" }, 502)
     return json(found.open ? { linked: found.linked, cron: found.cron, ...("why" in found ? { why: found.why } : {}) } : { linked: found.linked, cron: null })
   }),
