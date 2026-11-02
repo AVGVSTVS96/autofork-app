@@ -35,7 +35,7 @@ type Found = {
   releases: { nodes: { tagName: string }[] }
   refs: { nodes: { name: string }[] } | null
   defaultBranchRef: { target: { oid: string } } | null
-  ref?: { target: { oid: string } } | null
+  ref?: { target: { oid: string; statusCheckRollup?: { state: string } | null } } | null
 } | null
 
 const fields = (key: string) => {
@@ -47,7 +47,7 @@ const fields = (key: string) => {
     releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName } }
     refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name } }
     defaultBranchRef { target { oid } }
-    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid } }` : ""}
+    ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { statusCheckRollup { state } } } }` : ""}
   }`
 }
 
@@ -55,7 +55,8 @@ const mark = (key: string, found: Found) => {
   if (!found) return null
   const kind = key.split(" ")[1]
   const tag = found.refs?.nodes[0]?.name
-  if (kind === "branch") return found.ref?.target.oid ?? null
+  /* The engine takes a branch's newest commit whose checks passed, so the tip going green is news too */
+  if (kind === "branch") return found.ref ? `${found.ref.target.oid} ${found.ref.target.statusCheckRollup?.state ?? ""}` : null
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
   return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target.oid ?? null
 }
@@ -82,8 +83,17 @@ const read = async (asks: Map<number, Set<string>>) => {
   await pool(jobs, async ({ installationId, keys }) => {
     const query = `{ ${keys.map((key, index) => `w${index}: ${fields(key)}`).join("\n")} }`
     try {
-      const { body } = await request<{ data?: Record<string, Found> }>(await installationToken(installationId), "POST", "graphql", { query })
-      keys.forEach((key, index) => found.set(`${installationId} ${key}`, body.data?.[`w${index}`] ?? null))
+      const { body } = await request<{ data?: Record<string, Found> | null; errors?: { path?: unknown[] }[] }>(
+        await installationToken(installationId),
+        "POST",
+        "graphql",
+        { query },
+      )
+      const failed = new Set((body.errors ?? []).map((error) => error.path?.[0]))
+      if (body.data)
+        keys.forEach((key, index) => {
+          if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
+        })
     } catch (error) {
       console.warn(`installation ${installationId} couldn't check ${keys.length} upstreams: ${error}`)
     }
@@ -123,12 +133,14 @@ export const tick = internalAction({
     await pool(
       due.filter(({ fork }) => fork.seen !== null),
       async ({ fork, watch, now }) => {
+        const token = await installationToken(fork.installationId).catch((error) => console.warn(`no token for ${fork.name}: ${error}`))
+        if (!token) return
         try {
-          await request(await installationToken(fork.installationId), "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
+          await request(token, "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
           console.log(`${watch} is at ${now}: started ${fork.name}`)
         } catch (error) {
           console.warn(`couldn't start ${fork.name}: ${error}`)
-          if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429) return
+          if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429 || error.status === 401) return
           await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {})
         }
         await ctx.runMutation(internal.loop.seen, { forks: [{ id: fork.id, watch, seen: now }] })

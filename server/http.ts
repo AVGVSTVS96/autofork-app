@@ -138,7 +138,9 @@ const safeBack = (back: string | null) => (back && SAFE_BACK.test(back) ? back :
 const signIn = HttpRouter.add("GET", "/api/github/start", (request) =>
   Effect.gen(function* () {
     const state = randomBytes(16).toString("base64url")
-    yield* Session.update((session) => ({ ...session, signIn: { state, back: safeBack(params(request).get("back")) } }))
+    const back = safeBack(params(request).get("back"))
+    const unwrapped = back.startsWith("/verify") ? safeBack(new URL(back, "http://x").searchParams.get("back")) : back
+    yield* Session.update((session) => ({ ...session, signIn: { state, back: unwrapped } }))
     return HttpServerResponse.redirect(yield* WorkOS.authorizeUrl(`${origin(request)}/api/auth/callback`, state))
   }),
 )
@@ -280,8 +282,9 @@ const convexToken = Effect.gen(function* () {
   if (WorkOS.expiry(account.access) > Date.now() + 60_000) return { token: account.access }
   const env = yield* Env.Env
   if (!renewals.has(account.refresh)) {
-    renewals.set(account.refresh, Effect.runPromiseExit(WorkOS.refreshed(account.refresh).pipe(Effect.provideService(Env.Env, env))))
-    setTimeout(() => renewals.delete(account.refresh), 60_000)
+    const renewal = Effect.runPromiseExit(WorkOS.refreshed(account.refresh).pipe(Effect.provideService(Env.Env, env)))
+    renewals.set(account.refresh, renewal)
+    setTimeout(() => renewals.get(account.refresh) === renewal && renewals.delete(account.refresh), 60_000)
   }
   const renewed = yield* Effect.promise(() => renewals.get(account.refresh)!)
   if (Exit.isFailure(renewed)) {

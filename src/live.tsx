@@ -10,7 +10,7 @@ const token = async () => {
   for (let attempt = 0; ; attempt++) {
     try {
       const response = await fetch("/api/auth/token")
-      if (response.status === 401) return null
+      if (response.status === 401 && attempt > 0) return null
       if (response.ok) return ((await response.json()) as { token: string }).token
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1000 * 2 ** attempt)))

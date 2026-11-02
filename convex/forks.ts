@@ -5,7 +5,10 @@ import { cronLine } from "../shared/settings"
 import { file, installationToken, repoInstallation, request } from "./github"
 
 const repoOf = (upstream: string) =>
-  upstream.trim().match(/^(?:(?:https?:\/\/)?(?:www\.)?github\.com[/:]|git@github\.com:)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/i)?.[1]?.toLowerCase() ?? null
+  upstream
+    .trim()
+    .match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1]
+    ?.toLowerCase() ?? null
 
 export const watchFor = (upstream: string, given: string | undefined) => {
   const repo = repoOf(upstream)
@@ -17,7 +20,7 @@ export const watchFor = (upstream: string, given: string | undefined) => {
 }
 
 export const refresh = internalAction({
-  args: { name: v.string() },
+  args: { name: v.string(), ref: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ linked: boolean; cron: string | null }> => {
     const name = args.name.toLowerCase()
     const [owner = "", repo = ""] = name.split("/")
@@ -29,8 +32,8 @@ export const refresh = internalAction({
     const token = await installationToken(installationId)
     const { body: found } = await request<{ id: number; full_name: string; default_branch: string }>(token, "GET", `repos/${name}`)
     const [config, workflow] = await Promise.all([
-      file(token, found.full_name, ".autofork/config.json", found.default_branch),
-      file(token, found.full_name, ".github/workflows/autofork.yml", found.default_branch),
+      file(token, found.full_name, ".autofork/config.json", args.ref ?? found.default_branch),
+      file(token, found.full_name, ".github/workflows/autofork.yml", args.ref ?? found.default_branch),
     ])
     let settings: { upstream?: unknown; follow?: unknown } | undefined
     try {

@@ -533,11 +533,13 @@ const everyRepo = (token: string) =>
   Effect.gen(function* () {
     const nodes: Node[] = []
     let after: string | null = null
+    let failed = false
     for (let page = 0; page < PAGES; page++) {
       const { data, errors }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } })
       if (!data) return yield* new Problem({ message: `GitHub couldn't list your repositories${errors ? "" : " right now"}. Try again.` })
+      failed ||= !!errors
       nodes.push(...data.viewer.repositories.nodes.filter((node): node is Node => node !== null))
-      if (!data.viewer.repositories.pageInfo.hasNextPage) return { nodes, complete: !errors }
+      if (!data.viewer.repositories.pageInfo.hasNextPage) return { nodes, complete: !failed }
       after = data.viewer.repositories.pageInfo.endCursor
     }
     return { nodes, complete: false }
@@ -590,6 +592,7 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
   Effect.gen(function* () {
     const { rebuilds, month, rebuild } = wanted.limits
     if (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds)) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
+    if (rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
     if (rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const { repo, config, workflow } = yield* pushable(user, owner, name)
     if (!parses(config)) return yield* new Problem({ message: `${owner}/${name}'s .autofork/config.json isn't valid JSON. Fix it in the repo first.` })

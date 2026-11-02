@@ -49,7 +49,7 @@ const Forks = () => {
     <>
       {spend === null ? <SignInAgain back="/forks" many /> : null}
       <p className="facts">
-        <span>{spend ? money(total) : "–"} this month across {mine.value.length} fork{mine.value.length === 1 ? "" : "s"}, at API prices</span>
+        <span>{spend?.some((row) => mine.value.some((fork) => fork.repoId === row.repoId)) ? money(total) : "–"} this month across {mine.value.length} fork{mine.value.length === 1 ? "" : "s"}, at API prices</span>
       </p>
       <ul className="card list dash">
         {mine.value.map((fork) => (

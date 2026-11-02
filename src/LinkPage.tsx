@@ -28,7 +28,6 @@ export const LinkRoute = () => {
   useEffect(() => {
     let stop = false
     let timer: ReturnType<typeof setTimeout>
-    const started = Date.now()
     let wait = 3000
     const poll = async () => {
       if (document.hidden) return void (timer = setTimeout(poll, 3000))
@@ -36,7 +35,7 @@ export const LinkRoute = () => {
       if (stop) return
       setState(next)
       wait = Math.min(wait * 1.5, 30_000)
-      if (("linked" in next ? !next.linked : !next.final) && Date.now() - started < 600_000) timer = setTimeout(poll, wait)
+      if ("linked" in next ? !next.linked : !next.final) timer = setTimeout(poll, wait)
     }
     void poll()
     return () => {

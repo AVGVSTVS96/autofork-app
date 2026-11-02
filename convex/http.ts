@@ -98,6 +98,7 @@ type Hook = {
   repositories_added?: { full_name: string }[]
   repositories_removed?: { full_name: string }[]
   ref?: string
+  after?: string
   repository?: { full_name: string; default_branch: string }
 }
 
@@ -115,7 +116,8 @@ http.route({
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)
     else if (event === "installation_repositories") await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? [])])
-    else if (event === "push" && hook.repository && hook.ref === `refs/heads/${hook.repository.default_branch}`) await refresh([hook.repository])
+    else if (event === "push" && hook.repository && hook.ref === `refs/heads/${hook.repository.default_branch}`)
+      await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: hook.repository.full_name, ...(hook.after ? { ref: hook.after } : {}) })
     return new Response(null, { status: 204 })
   }),
 })

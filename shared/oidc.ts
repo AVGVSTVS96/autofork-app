@@ -17,7 +17,8 @@ const load = () =>
 
 /* A failed refetch keeps the last good keys, so one token with a made-up kid can't take valid tokens down with it */
 const jwks = (fresh = false) => {
-  if (keys && !(fresh && Date.now() - fetched > 60_000)) return keys
+  const age = Date.now() - fetched
+  if (keys && age < 3_600_000 && !(fresh && age > 60_000)) return keys
   fetched = Date.now()
   const before = keys
   const next = load()
