@@ -4,6 +4,7 @@ import type { ActionCtx } from "./_generated/server"
 import { httpAction } from "./_generated/server"
 import { Refused, verifyOidc } from "../shared/oidc"
 import { GitHubError, signed } from "./github"
+import { monthStart } from "./ledger"
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -39,7 +40,7 @@ const http = httpRouter()
 http.route({
   path: "/ledger",
   method: "GET",
-  handler: guarded(async (ctx, request) => json(await ctx.runQuery(internal.ledger.totals, { repoId: (await fork(request)).repoId }))),
+  handler: guarded(async (ctx, request) => json(await ctx.runQuery(internal.ledger.totals, { repoId: (await fork(request)).repoId, since: monthStart() }))),
 })
 
 http.route({
@@ -110,7 +111,7 @@ http.route({
     const hook = JSON.parse(body) as Hook
     const refresh = (repos: { full_name: string }[] = []) =>
       Promise.all(repos.map((repo) => ctx.scheduler.runAfter(0, internal.forks.refresh, { name: repo.full_name })))
-    if (event === "installation" && hook.action === "deleted" && hook.installation)
+    if (event === "installation" && (hook.action === "deleted" || hook.action === "suspend") && hook.installation)
       await ctx.runMutation(internal.forks.unlinkInstallation, { installationId: hook.installation.id })
     else if (event === "installation") await refresh(hook.repositories)
     else if (event === "installation_repositories") await refresh([...(hook.repositories_added ?? []), ...(hook.repositories_removed ?? [])])

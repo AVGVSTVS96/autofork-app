@@ -64,13 +64,13 @@ const fromCookies = Effect.gen(function* () {
   const { cookies } = yield* HttpServerRequest.HttpServerRequest
   const main = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
   const { account } = cookies[ACCOUNT] ? yield* decrypt(cookies[ACCOUNT]) : main
-  return { ...main, account }
+  return { ...main, account: main.user ? account : undefined }
 })
 
 export const read = fromCookies
 
 /* The WorkOS tokens live in their own cookie, and each cookie is only sent back when it changed, so a request that renews them and
-   one that changes something else can't put back each other's old copy */
+   one that changes something else can't put back each other's old copy. They only count while the GitHub user is signed in. */
 export const write = (session: Session) =>
   Effect.gen(function* () {
     const { account, ...rest } = session

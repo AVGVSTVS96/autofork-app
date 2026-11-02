@@ -55,7 +55,7 @@ export class Client extends AtomHttpApi.Service<Client>()("autofork/Client", {
 
 export const me = Client.query("app", "me", {})
 
-export const mine = Client.query("app", "mine", { timeToLive: "5 minutes" })
+export const mine = Client.query("app", "mine", { timeToLive: "5 minutes", reactivityKeys: ["settings"] })
 
 export const fork = (owner: string, name: string) => Client.query("app", "fork", { params: { owner, name } })
 
@@ -89,5 +89,5 @@ export const unwrap = <A>(exit: Exit.Exit<A, unknown>) => {
   throw new Error(failure(exit.cause))
 }
 
-export const settings = (owner: string, name: string) => Client.query("app", "settings", { params: { owner, name } })
+export const settings = (owner: string, name: string) => Client.query("app", "settings", { params: { owner, name }, reactivityKeys: ["settings"] })
 export const saveSettings = Client.mutation("app", "saveSettings")

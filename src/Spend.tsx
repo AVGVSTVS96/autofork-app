@@ -3,15 +3,15 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState } from "react"
 import { EVERY, type Settings } from "../shared/api.ts"
 import * as client from "./client.ts"
-import { money, type Spend } from "./live.tsx"
+import { money, rebuilding, type Spend } from "./live.tsx"
 import { Item } from "./ui.tsx"
 
 export const NONE: Spend = { repoId: 0, name: "", linked: false, rebuilds: [], spent: 0 }
 
 /* Accounts from before sign-in went through WorkOS have no Convex session yet */
-export const SignInAgain = ({ back }: { back: string }) => (
+export const SignInAgain = ({ back, many = false }: { back: string; many?: boolean }) => (
   <p className="fine">
-    <a href={`/api/github/start?back=${encodeURIComponent(back)}`}>Sign in again</a> to see what this fork's rebuilds cost.
+    <a href={`/api/github/start?back=${encodeURIComponent(back)}`}>Sign in again</a> to see what {many ? "your forks'" : "this fork's"} rebuilds cost.
   </p>
 )
 
@@ -55,11 +55,11 @@ export const SpendCard = ({ spend, settings, owner, name }: { spend: Spend | und
           spend.rebuilds.map((row) => (
             <Item
               key={row.id}
-              state={row.status === "running" ? "now" : row.status === "done" ? "ok" : "bad"}
+              state={rebuilding(row) ? "now" : row.status === "done" ? "ok" : "bad"}
               end={row.status === "running" ? `up to ${money(row.cap)}` : money(row.cost)}
               detail={
                 <p className="why">
-                  {[shortModel(row.model) ?? row.agent, day(row.startedAt), row.status === "stopped" ? "stopped" : null].filter(Boolean).join(" · ")} ·{" "}
+                  {[shortModel(row.model) ?? row.agent, day(row.startedAt), row.status === "stopped" ? "stopped" : row.status === "running" && !rebuilding(row) ? "never reported" : null].filter(Boolean).join(" · ")} ·{" "}
                   <a href={row.runUrl} target="_blank" rel="noreferrer">
                     run
                   </a>
@@ -106,7 +106,7 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
     if (Object.values(draft.limits).some(Number.isNaN)) return setState({ busy: false, note: "Fill in every limit.", bad: true })
     setState({ busy: true, note: null, bad: false })
     try {
-      const saved = client.unwrap(await save({ params: { owner, name }, payload: draft }))
+      const saved = client.unwrap(await save({ params: { owner, name }, payload: draft, reactivityKeys: ["settings"] }))
       setDraft(saved)
       onSaved(saved)
       setState({ busy: false, note: "Saved in a commit to your fork.", bad: false })
@@ -146,11 +146,11 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
         </label>
         <label>
           <span>$ a month</span>
-          <input type="number" min={0} step={1} value={shown(draft.limits.month)} onChange={limit("month")} />
+          <input type="number" min={0} step="any" value={shown(draft.limits.month)} onChange={limit("month")} />
         </label>
         <label>
           <span>$ a rebuild</span>
-          <input type="number" min={0} step={1} value={shown(draft.limits.rebuild)} onChange={limit("rebuild")} />
+          <input type="number" min={0} step="any" value={shown(draft.limits.rebuild)} onChange={limit("rebuild")} />
         </label>
       </div>
       <p className="fine">A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices.</p>

@@ -30,6 +30,7 @@ export const seen = internalMutation({
 })
 
 type Found = {
+  isPrivate: boolean
   latestRelease: { tagName: string } | null
   releases: { nodes: { tagName: string }[] }
   refs: { nodes: { name: string }[] } | null
@@ -41,6 +42,7 @@ const fields = (key: string) => {
   const [repo = "", kind, branch] = key.split(" ")
   const [owner, name] = repo.split("/")
   return `repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
+    isPrivate
     latestRelease { tagName }
     releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName } }
     refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name } }
@@ -70,53 +72,67 @@ const pool = async <A>(items: A[], run: (item: A) => Promise<void>) => {
   )
 }
 
-/* Every minute, one GraphQL query per installation asks what the upstreams its forks follow have published (a release's REST ETag changes with
-   its download counts, so conditional requests wouldn't stay free). Each upstream is read by an installation that follows it, so a private
-   upstream is read only by someone who can see it. Each fork keeps its own mark, so one broken fork never restarts the others: a refused
-   dispatch marks it anyway (GitHub's schedule is its backup), a GitHub outage or rate limit leaves it for the next tick. */
+/* What each installation can see of the upstreams asked about, keyed "installation watch"; a failed read leaves its keys out */
+const read = async (asks: Map<number, Set<string>>) => {
+  const found = new Map<string, Found>()
+  const jobs = [...asks].flatMap(([installationId, keys]) => {
+    const all = [...keys]
+    return Array.from({ length: Math.ceil(all.length / CHUNK) }, (_, at) => ({ installationId, keys: all.slice(at * CHUNK, (at + 1) * CHUNK) }))
+  })
+  await pool(jobs, async ({ installationId, keys }) => {
+    const query = `{ ${keys.map((key, index) => `w${index}: ${fields(key)}`).join("\n")} }`
+    try {
+      const { body } = await request<{ data?: Record<string, Found> }>(await installationToken(installationId), "POST", "graphql", { query })
+      keys.forEach((key, index) => found.set(`${installationId} ${key}`, body.data?.[`w${index}`] ?? null))
+    } catch (error) {
+      console.warn(`installation ${installationId} couldn't check ${keys.length} upstreams: ${error}`)
+    }
+  })
+  return found
+}
+
+const ask = (asks: Map<number, Set<string>>, installationId: number, key: string) => asks.set(installationId, (asks.get(installationId) ?? new Set()).add(key))
+
+/* Every minute, one GraphQL query per installation asks what upstreams have published (a release's REST ETag changes with its download counts, so
+   conditional requests wouldn't stay free). A public upstream is read once for all its forks; a private one, or one the first reader couldn't see,
+   is read with each fork's own installation, so nobody learns about a repo they can't see. Each fork keeps its own mark, saved as soon as it's
+   started: a refused dispatch marks it anyway (GitHub's schedule is its backup), a GitHub outage or rate limit leaves it for the next tick. */
 export const tick = internalAction({
   args: {},
   handler: async (ctx) => {
     const watches = await ctx.runQuery(internal.loop.watching, {})
-    const tokens = new Map<number, Promise<string>>()
-    const token = (installationId: number) => {
-      if (!tokens.has(installationId)) tokens.set(installationId, installationToken(installationId))
-      return tokens.get(installationId)!
+    const first = new Map<number, Set<string>>()
+    const reader = new Map(watches.map((watch) => [watch.key, Math.min(...watch.forks.map((fork) => fork.installationId))]))
+    for (const [key, installationId] of reader) ask(first, installationId, key)
+    const shared = await read(first)
+    const own = new Map<number, Set<string>>()
+    const forFork = (key: string, fork: Watched) => {
+      const seenFirst = shared.get(`${reader.get(key)} ${key}`)
+      if (seenFirst && (!seenFirst.isPrivate || fork.installationId === reader.get(key))) return seenFirst
+      ask(own, fork.installationId, key)
+      return undefined
     }
-    const readers = new Map<number, typeof watches>()
-    for (const watch of watches) {
-      const reader = Math.min(...watch.forks.map((fork) => fork.installationId))
-      readers.set(reader, [...(readers.get(reader) ?? []), watch])
-    }
-    const found = new Map<string, Found>()
-    for (const [reader, theirs] of readers)
-      for (let at = 0; at < theirs.length; at += CHUNK) {
-        const chunk = theirs.slice(at, at + CHUNK)
-        const query = `{ ${chunk.map((watch, index) => `w${index}: ${fields(watch.key)}`).join("\n")} }`
-        try {
-          const { body } = await request<{ data?: Record<string, Found> }>(await token(reader), "POST", "graphql", { query })
-          chunk.forEach((watch, index) => found.set(watch.key, body.data?.[`w${index}`] ?? null))
-        } catch (error) {
-          console.warn(`couldn't check ${chunk.length} upstreams: ${error}`)
-        }
-      }
-    const due = watches.flatMap((watch) => {
-      const now = mark(watch.key, found.get(watch.key) ?? null)
-      return now ? watch.forks.filter((fork) => fork.seen !== now).map((fork) => ({ fork, watch: watch.key, now })) : []
+    const pending = watches.flatMap((watch) => watch.forks.map((fork) => ({ fork, key: watch.key, found: forFork(watch.key, fork) })))
+    const second = own.size ? await read(own) : new Map<string, Found>()
+    const due = pending.flatMap(({ fork, key, found }) => {
+      const now = mark(key, found ?? second.get(`${fork.installationId} ${key}`) ?? null)
+      return now && fork.seen !== now ? [{ fork, watch: key, now }] : []
     })
-    const marked: { id: Id<"forks">; watch: string; seen: string }[] = []
-    await pool(due, async ({ fork, watch, now }) => {
-      if (fork.seen !== null)
+    const quiet = due.filter(({ fork }) => fork.seen === null).map(({ fork, watch, now }) => ({ id: fork.id, watch, seen: now }))
+    if (quiet.length) await ctx.runMutation(internal.loop.seen, { forks: quiet })
+    await pool(
+      due.filter(({ fork }) => fork.seen !== null),
+      async ({ fork, watch, now }) => {
         try {
-          await request(await token(fork.installationId), "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
+          await request(await installationToken(fork.installationId), "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
           console.log(`${watch} is at ${now}: started ${fork.name}`)
         } catch (error) {
           console.warn(`couldn't start ${fork.name}: ${error}`)
           if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429) return
           await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {})
         }
-      marked.push({ id: fork.id, watch, seen: now })
-    })
-    if (marked.length) await ctx.runMutation(internal.loop.seen, { forks: marked })
+        await ctx.runMutation(internal.loop.seen, { forks: [{ id: fork.id, watch, seen: now }] })
+      },
+    )
   },
 })

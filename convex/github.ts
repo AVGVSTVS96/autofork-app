@@ -73,12 +73,19 @@ const appJwt = async () => {
 
 export const app = async <A>(method: string, path: string, body?: unknown) => (await request<A>(await appJwt(), method, path, body)).body
 
-export const installationToken = async (installationId: number) =>
-  (await app<{ token: string }>("POST", `app/installations/${installationId}/access_tokens`)).token
+const tokens = new Map<number, { token: string; until: number }>()
+
+export const installationToken = async (installationId: number) => {
+  const cached = tokens.get(installationId)
+  if (cached && cached.until > Date.now() + 300_000) return cached.token
+  const { token, expires_at } = await app<{ token: string; expires_at: string }>("POST", `app/installations/${installationId}/access_tokens`)
+  tokens.set(installationId, { token, until: Date.parse(expires_at) })
+  return token
+}
 
 export const repoInstallation = (owner: string, name: string) =>
-  app<{ id: number }>("GET", `repos/${owner}/${name}/installation`).then(
-    (installation) => installation.id,
+  app<{ id: number; suspended_at: string | null }>("GET", `repos/${owner}/${name}/installation`).then(
+    (installation) => (installation.suspended_at ? null : installation.id),
     (error) => {
       if (error instanceof GitHubError && error.status === 404) return null
       throw error

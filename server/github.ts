@@ -205,7 +205,7 @@ export const signedIn = Effect.gen(function* () {
   const tokens = yield* renew(user.refresh).pipe(
     Effect.catchIf(
       (error) => error.status === 401,
-      () => Effect.andThen(Session.update(({ user: _, account: __, ...rest }) => rest), Effect.fail(new SignedOut())),
+      () => Effect.andThen(Session.update(({ user: _, ...rest }) => rest), Effect.fail(new SignedOut())),
     ),
   )
   const fresh = { ...user, ...tokens }

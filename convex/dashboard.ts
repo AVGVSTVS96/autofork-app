@@ -18,15 +18,15 @@ export const allow = internalMutation({
 })
 
 export const forks = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { since: v.number() },
+  handler: async (ctx, { since }) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) return null
     const access = await ctx.db.query("access").withIndex("user", (q) => q.eq("user", identity.subject)).unique()
     return Promise.all(
       (access?.repos ?? []).map(async ({ id: repoId, name }) => {
         const fork = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", repoId)).unique()
-        const rebuilds = (await thisMonth(ctx, repoId)).map((row) => ({
+        const rebuilds = (await thisMonth(ctx, repoId, since)).map((row) => ({
           id: row._id,
           patch: row.patch,
           agent: row.agent,

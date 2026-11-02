@@ -44,7 +44,7 @@ const verify = createRoute({
   path: "/verify",
   validateSearch: (search: Record<string, unknown>): { email?: string; error?: string; back?: string } => ({
     ...(typeof search.email === "string" ? { email: search.email } : {}),
-    ...(typeof search.back === "string" && /^\/(?![/\\])/.test(search.back) ? { back: search.back } : {}),
+    ...(typeof search.back === "string" && /^\/(?![/\\])[^\\\s\p{Cc}]*$/u.test(search.back) ? { back: search.back } : {}),
     ...(typeof search.error === "string" ? { error: search.error } : {}),
   }),
   component: lazyRouteComponent(() => import("./Verify.tsx"), "VerifyRoute"),

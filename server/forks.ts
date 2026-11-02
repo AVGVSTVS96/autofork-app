@@ -495,10 +495,12 @@ export const status = (owner: string, name: string) =>
     }
   })
 
+/* null when the viewer can't push, undefined when GitHub didn't say */
 export const yours = (viewer: User, owner: string, name: string) =>
   GitHub.request<GitHubRepo & { id: number }>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
-    Effect.map((seen) => (seen.permissions?.push ? { id: seen.id, name: seen.full_name } : null)),
-    Effect.orElseSucceed(() => null),
+    Effect.map((seen): { id: number; name: string } | null | undefined => (seen.permissions?.push ? { id: seen.id, name: seen.full_name } : null)),
+    Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+    Effect.orElseSucceed(() => undefined),
   )
 
 type Blob = { text: string } | null
@@ -520,7 +522,10 @@ const MINE = `query($after: String) { viewer { repositories(first: 100, after: $
   pageInfo { hasNextPage endCursor }
 } } }`
 
-type Page = { data?: { viewer: { repositories: { nodes: Node[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } }
+type Page = {
+  data?: { viewer: { repositories: { nodes: (Node | null)[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } | null
+  errors?: unknown[]
+}
 
 const PAGES = 10
 
@@ -529,21 +534,23 @@ const everyRepo = (token: string) =>
     const nodes: Node[] = []
     let after: string | null = null
     for (let page = 0; page < PAGES; page++) {
-      const { data }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } })
-      nodes.push(...(data?.viewer.repositories.nodes ?? []))
-      if (!data?.viewer.repositories.pageInfo.hasNextPage) break
+      const { data, errors }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } })
+      if (!data) return yield* new Problem({ message: `GitHub couldn't list your repositories${errors ? "" : " right now"}. Try again.` })
+      nodes.push(...data.viewer.repositories.nodes.filter((node): node is Node => node !== null))
+      if (!data.viewer.repositories.pageInfo.hasNextPage) return { nodes, complete: !errors }
       after = data.viewer.repositories.pageInfo.endCursor
     }
-    return nodes
+    return { nodes, complete: false }
   })
 
 const PUSH = ["ADMIN", "MAINTAIN", "WRITE"]
 
 export const mine = (user: User) =>
   everyRepo(user.token).pipe(
-    Effect.map((nodes) =>
-      nodes
-        .filter((repo) => repo.config && PUSH.includes(repo.viewerPermission ?? ""))
+    Effect.map(({ nodes, complete }) => ({
+      complete,
+      forks: nodes
+        .filter((repo) => typeof repo.config?.text === "string" && PUSH.includes(repo.viewerPermission ?? ""))
         .map(
           (repo): MyFork => ({
             owner: repo.owner.login,
@@ -553,7 +560,7 @@ export const mine = (user: User) =>
             settings: readSettings(repo.config?.text ?? null, repo.workflow?.text ?? null),
           }),
         ),
-    ),
+    })),
   )
 
 const contents = (token: string, owner: string, name: string, path: string, branch: string) =>

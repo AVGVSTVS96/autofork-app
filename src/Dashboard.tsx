@@ -4,7 +4,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult"
 import type { MyFork } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
-import { Live, money, type Spend, useSpend } from "./live.tsx"
+import { Live, money, rebuilding, type Spend, useSpend } from "./live.tsx"
 import { Meter, SignInAgain } from "./Spend.tsx"
 import { Nav, Retry, useTitle } from "./ui.tsx"
 
@@ -12,7 +12,7 @@ const route = getRouteApi("/forks")
 
 const Row = ({ fork, spend }: { fork: MyFork; spend: Spend | undefined }) => {
   const { limits } = fork.settings
-  const running = spend?.rebuilds.some((row) => row.status === "running")
+  const running = spend?.rebuilds.some(rebuilding)
   return (
     <li className="dash-row">
       <Link to="/$owner/$name" params={{ owner: fork.owner, name: fork.name }} search={{}} className="dash-name">
@@ -21,16 +21,16 @@ const Row = ({ fork, spend }: { fork: MyFork; spend: Spend | undefined }) => {
           <b>
             {fork.owner}/{fork.name}
           </b>
-          <small>{spend?.linked ? "on time" : "GitHub's schedule"}{running ? " · rebuilding now" : ""}</small>
+          <small>{spend ? (spend.linked ? "on time" : "GitHub's schedule") : ""}{running ? " · rebuilding now" : ""}</small>
         </span>
       </Link>
       <span className="dash-spend">
         <span>
-          {money(spend?.spent ?? 0)} <small>of {money(limits.month)}</small>
+          {spend ? money(spend.spent) : "–"} <small>of {money(limits.month)}</small>
         </span>
         <Meter spent={spend?.spent ?? 0} cap={limits.month} />
         <small>
-          {spend?.rebuilds.length ?? 0} of {limits.rebuilds} rebuilds
+          {spend ? spend.rebuilds.length : "–"} of {limits.rebuilds} rebuilds
         </small>
       </span>
     </li>
@@ -43,17 +43,17 @@ const Forks = () => {
   const spend = useSpend()
   if (AsyncResult.isFailure(mine)) return <Retry className="note" message={client.failure(mine.cause)} onRetry={retry} />
   if (!AsyncResult.isSuccess(mine)) return <p className="note wait">Loading your forks…</p>
-  if (spend === null) return <SignInAgain back="/forks" />
   if (!mine.value.length) return <p className="note">Forks you make on autofork show up here, with what each one's rebuilds cost.</p>
   const total = mine.value.reduce((sum, fork) => sum + (spend?.find((row) => row.repoId === fork.repoId)?.spent ?? 0), 0)
   return (
     <>
+      {spend === null ? <SignInAgain back="/forks" many /> : null}
       <p className="facts">
-        <span>{money(total)} this month across {mine.value.length} fork{mine.value.length === 1 ? "" : "s"}, at API prices</span>
+        <span>{spend ? money(total) : "–"} this month across {mine.value.length} fork{mine.value.length === 1 ? "" : "s"}, at API prices</span>
       </p>
       <ul className="card list dash">
         {mine.value.map((fork) => (
-          <Row key={fork.repoId} fork={fork} spend={spend?.find((row) => row.repoId === fork.repoId)} />
+          <Row key={fork.repoId} fork={fork} spend={spend ? (spend.find((row) => row.repoId === fork.repoId) ?? undefined) : undefined} />
         ))}
       </ul>
     </>

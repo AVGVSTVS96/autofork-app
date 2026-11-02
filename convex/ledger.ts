@@ -10,17 +10,18 @@ export const monthStart = (now = Date.now()) => {
 const PER_RUN = 50
 const PER_MONTH = 200
 
-export const thisMonth = (ctx: QueryCtx, repoId: number) =>
+/* Queries take the month's start as an argument: Convex caches a query until what it read changes, not when the clock does */
+export const thisMonth = (ctx: QueryCtx, repoId: number, since = monthStart()) =>
   ctx.db
     .query("rebuilds")
-    .withIndex("repoId", (q) => q.eq("repoId", repoId).gte("_creationTime", monthStart()))
+    .withIndex("repoId", (q) => q.eq("repoId", repoId).gte("_creationTime", since))
     .order("desc")
     .take(PER_MONTH)
 
 export const totals = internalQuery({
-  args: { repoId: v.number() },
-  handler: async (ctx, { repoId }) => {
-    const rows = await thisMonth(ctx, repoId)
+  args: { repoId: v.number(), since: v.number() },
+  handler: async (ctx, { repoId, since }) => {
+    const rows = await thisMonth(ctx, repoId, since)
     return { rebuilds: rows.length, spent: rows.reduce((sum, row) => sum + row.cost, 0) }
   },
 })

@@ -48,9 +48,9 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("mine", () =>
       github(
         Effect.gen(function* () {
-          const forks = yield* Forks.mine(yield* GitHub.signedIn)
+          const { forks, complete } = yield* Forks.mine(yield* GitHub.signedIn)
           const { account } = yield* Session.read
-          if (account) yield* allow(account.id, forks.map((fork) => ({ id: fork.repoId, name: `${fork.owner}/${fork.name}` })))
+          if (account) yield* allow(account.id, forks.map((fork) => ({ id: fork.repoId, name: `${fork.owner}/${fork.name}` })), complete ? "replace" : "add")
           return forks
         }),
       ),
@@ -80,7 +80,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
           if (!claude) return yield* new Problem({ message: "Start the Claude sign-in again." })
           const token = yield* Agents.claudeToken(payload.code, claude)
           const started = yield* Forks.start(user, params.owner, params.name, payload.change, "claude", token)
-          yield* Session.update(({ claude: _, ...session }) => session)
+          yield* Session.update(({ claude: _, ...session }) => ({ ...session, user }))
           return started
         }),
       ),
@@ -101,7 +101,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
           const auth = yield* Agents.chatgptAuth(chatgpt)
           if (!auth) return { status: "waiting" as const }
           const started = yield* Forks.start(user, params.owner, params.name, payload.change, "chatgpt", auth)
-          yield* Session.update(({ chatgpt: _, ...session }) => session)
+          yield* Session.update(({ chatgpt: _, ...session }) => ({ ...session, user }))
           return { status: "started" as const, ...started }
         }),
       ),
@@ -113,7 +113,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
         if (!user) return false
         const repo = yield* Forks.yours(user, params.owner, params.name)
         const { account } = yield* Session.read
-        if (account) yield* allow(account.id, [repo ?? { id: 0, name: `${params.owner}/${params.name}` }], repo ? "add" : "drop")
+        if (account && repo !== undefined) yield* allow(account.id, [repo ?? { id: 0, name: `${params.owner}/${params.name}` }], repo ? "add" : "drop")
         return !!repo
       }),
     )
@@ -131,8 +131,9 @@ const origin = (request: HttpServerRequest.HttpServerRequest) => {
 const params = (request: HttpServerRequest.HttpServerRequest) => new URL(request.url, "http://x").searchParams
 
 const REPO_PART = /^(?!\.\.?$)[\w.-]+$/
+const SAFE_BACK = /^\/(?![/\\])[^\\\s\p{Cc}]*$/u
 
-const safeBack = (back: string | null) => (back && /^\/(?![/\\])/.test(back) ? back : "/")
+const safeBack = (back: string | null) => (back && SAFE_BACK.test(back) ? back : "/")
 
 const signIn = HttpRouter.add("GET", "/api/github/start", (request) =>
   Effect.gen(function* () {
@@ -180,20 +181,23 @@ const accountCallback = HttpRouter.add("GET", "/api/auth/callback", (request) =>
 const signedIn = (
   session: Session.Session,
   signIn: NonNullable<Session.Session["signIn"]>,
-  failed: (error: string) => HttpServerResponse.HttpServerResponse,
+  rejected: (error: string) => HttpServerResponse.HttpServerResponse,
   attempt: ReturnType<typeof WorkOS.withCode>,
+  failed = rejected,
 ) =>
   Effect.gen(function* () {
     const signed = yield* attempt.pipe(Effect.tapError(Effect.logWarning), Effect.option)
-    if (signed._tag === "None") return failed("GitHub didn't finish signing you in. Try again.")
+    if (signed._tag === "None") return rejected("GitHub didn't finish signing you in. Try again.")
     if ("verify" in signed.value) {
       yield* Session.write({ ...session, signIn: { ...signIn, verify: signed.value.verify.token } })
       return HttpServerResponse.redirect(`/verify?${new URLSearchParams({ email: signed.value.verify.email, back: signIn.back })}`)
     }
     const { user, access_token, refresh_token, oauth_tokens } = signed.value
-    if (!oauth_tokens) return failed("GitHub didn't finish signing you in. Try again.")
+    const lost = () =>
+      Effect.as(Session.write({ ...session, signIn: { state: signIn.state, back: signIn.back } }), failed("GitHub didn't finish signing you in. Try again."))
+    if (!oauth_tokens) return yield* lost()
     const identified = yield* GitHub.identify(GitHub.fromWorkOS(oauth_tokens)).pipe(Effect.option)
-    if (identified._tag === "None") return failed("GitHub didn't finish signing you in. Try again.")
+    if (identified._tag === "None") return yield* lost()
     return yield* finish(session, signIn.back, signIn.state, identified.value.user, identified.value.installed, { id: user.id, access: access_token, refresh: refresh_token })
   })
 
@@ -206,7 +210,7 @@ const verifyEmail = HttpRouter.add("POST", "/api/auth/verify", (request) =>
       HttpServerResponse.redirect(
         `/verify?${new URLSearchParams({ email: form.get("email") ?? "", back: signIn.back, error: "That code didn't work, or it expired. Check the email, or start over." })}`,
       )
-    return yield* signedIn(session, signIn, again, WorkOS.withEmailCode(form.get("code")?.trim() ?? "", signIn.verify))
+    return yield* signedIn(session, signIn, again, WorkOS.withEmailCode(form.get("code")?.trim() ?? "", signIn.verify), failed)
   }),
 )
 
@@ -280,7 +284,14 @@ const convexToken = Effect.gen(function* () {
     setTimeout(() => renewals.delete(account.refresh), 60_000)
   }
   const renewed = yield* Effect.promise(() => renewals.get(account.refresh)!)
-  if (Exit.isFailure(renewed)) return yield* new SignedOut()
+  if (Exit.isFailure(renewed)) {
+    const error = Cause.squash(renewed.cause)
+    if (error instanceof GitHub.GitHubError && (error.status === 0 || error.status >= 500)) {
+      renewals.delete(account.refresh)
+      return yield* Effect.die(error)
+    }
+    return yield* new SignedOut()
+  }
   yield* Session.update((session) => ({ ...session, account: { id: account.id, access: renewed.value.access_token, refresh: renewed.value.refresh_token } }))
   return { token: renewed.value.access_token }
 })

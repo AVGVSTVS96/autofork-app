@@ -13,7 +13,7 @@ const route = getRouteApi("/$owner/$name")
 const Yours = lazy(() =>
   import("./Yours.tsx").then(
     (module) => ({ default: module.Yours }),
-    () => ({ default: (_: { owner: string; name: string }) => <></> }),
+    () => ({ default: (_: { owner: string; name: string }) => <p className="fine bad">Couldn't load your spend and settings. Reload the page.</p> }),
   ),
 )
 
