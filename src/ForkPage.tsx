@@ -2,13 +2,15 @@ import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { getRouteApi } from "@tanstack/react-router"
 import * as Option from "effect/Option"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useMemo, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
 import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, Retry, useTitle } from "./ui.tsx"
 
 const route = getRouteApi("/$owner/$name")
+
+const Yours = lazy(() => import("./Yours.tsx").then((module) => ({ default: module.Yours })))
 
 export const ForkRoute = () => {
   const { owner, name } = route.useParams()
@@ -143,7 +145,14 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
       ) : null}
 
       <Progress run={run} waiting={waiting} fork={fork} />
-      {yours ? <More owner={fork.owner} name={fork.name} /> : null}
+      {yours ? (
+        <>
+          <More owner={fork.owner} name={fork.name} />
+          <Suspense>
+            <Yours owner={fork.owner} name={fork.name} />
+          </Suspense>
+        </>
+      ) : null}
     </>
   )
 }

@@ -88,3 +88,6 @@ export const unwrap = <A>(exit: Exit.Exit<A, unknown>) => {
   if (Exit.isSuccess(exit)) return exit.value
   throw new Error(failure(exit.cause))
 }
+
+export const settings = (owner: string, name: string) => Client.query("app", "settings", { params: { owner, name } })
+export const saveSettings = Client.mutation("app", "saveSettings")

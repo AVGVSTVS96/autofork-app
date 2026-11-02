@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
-import { type Agent, type Change, type ForkState, type MyFork, Problem, type Repo, type Run, split, squash } from "../shared/api.ts"
+import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
+import { readSettings, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -83,7 +84,7 @@ const workflow = (branch: string) =>
     "",
     "on:",
     "  schedule:",
-    '    - cron: "17 * * * *"',
+    `    - cron: "${EVERY["15m"]}"`,
     "  workflow_dispatch:",
     "  push:",
     `    branches: [${branch}]`,
@@ -309,7 +310,7 @@ export const start = (user: User, owner: string, name: string, change: string, a
       if (!managed) {
         const upstream = repo.parent?.full_name ?? `${owner}/${name}`
         files.push(
-          { path: ".autofork/config.json", content: `${JSON.stringify({ upstream }, null, 2)}\n` },
+          { path: ".autofork/config.json", content: `${JSON.stringify({ upstream, limits: LIMITS }, null, 2)}\n` },
           ...(!repo.parent || control.some((entry) => entry.name === NOTE) ? [] : yield* readmeNote(user.token, `${owner}/${name}`, branch, upstream)),
         )
         files.push(...(yield* inheritedWorkflows(user.token, repo, branch)))
@@ -500,17 +501,93 @@ export const yours = (viewer: User, owner: string, name: string) =>
     Effect.orElseSucceed(() => false),
   )
 
-type Node = { name: string; owner: { login: string }; parent: { nameWithOwner: string } | null; autofork: { id: string } | null }
+type Blob = { text: string } | null
+
+type Node = {
+  name: string
+  databaseId: number
+  viewerPermission: string | null
+  owner: { login: string }
+  parent: { nameWithOwner: string } | null
+  config: Blob
+  workflow: Blob
+}
 
 const MINE = `{ viewer { repositories(first: 100, isFork: true, ownerAffiliations: [OWNER, ORGANIZATION_MEMBER], orderBy: { field: PUSHED_AT, direction: DESC }) {
-  nodes { name owner { login } parent { nameWithOwner } autofork: object(expression: "HEAD:.autofork/config.json") { id } }
+  nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
+    config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
+    workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
 } } }`
 
+const PUSH = ["ADMIN", "MAINTAIN", "WRITE"]
+
+/* Your autoforks you can push to: only those show their spend */
 export const mine = (user: User) =>
   GitHub.request<{ data?: { viewer: { repositories: { nodes: Node[] } } } }>(user.token, "POST", "/graphql", { query: MINE }).pipe(
     Effect.map(({ data }) =>
       (data?.viewer.repositories.nodes ?? [])
-        .filter((repo) => repo.autofork)
-        .map((repo): MyFork => ({ owner: repo.owner.login, name: repo.name, upstream: repo.parent?.nameWithOwner ?? null })),
+        .filter((repo) => repo.config && PUSH.includes(repo.viewerPermission ?? ""))
+        .map(
+          (repo): MyFork => ({
+            owner: repo.owner.login,
+            name: repo.name,
+            upstream: repo.parent?.nameWithOwner ?? null,
+            repoId: repo.databaseId,
+            settings: readSettings(repo.config?.text ?? null, repo.workflow?.text ?? null),
+          }),
+        ),
     ),
+  )
+
+const contents = (token: string, owner: string, name: string, path: string, branch: string) =>
+  GitHub.text(token, `/repos/${owner}/${name}/contents/${path}?ref=${branch}`).pipe(
+    Effect.map((raw) => Buffer.from((JSON.parse(raw) as { content: string }).content, "base64").toString()),
+    Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+  )
+
+const pushable = (user: User, owner: string, name: string) =>
+  Effect.gen(function* () {
+    const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
+    if (!repo.permissions?.push) return yield* new Problem({ message: "That fork isn't yours." })
+    const [config, workflow] = yield* Effect.all(
+      [contents(user.token, owner, name, ".autofork/config.json", repo.default_branch), contents(user.token, owner, name, ".github/workflows/autofork.yml", repo.default_branch)],
+      { concurrency: 2 },
+    )
+    if (config === null) return yield* new Problem({ message: `${owner}/${name} has no .autofork/config.json.` })
+    return { repo, config, workflow }
+  })
+
+export const settings = (user: User, owner: string, name: string) =>
+  Effect.map(pushable(user, owner, name), ({ config, workflow }) => readSettings(config, workflow))
+
+const fine = (limit: number) => Number.isFinite(limit) && limit >= 0 && limit <= 100_000
+
+/* Settings live in the fork's repo, so the fork runs the same with or without the site: saving them is one commit */
+export const saveSettings = (user: User, owner: string, name: string, wanted: Settings) =>
+  Effect.gen(function* () {
+    const { rebuilds, month, rebuild } = wanted.limits
+    if (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds)) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
+    if (wanted.cron !== null && !/^[\d*/,-]+( [\d*/,-]+){4}$/.test(wanted.cron)) return yield* new Problem({ message: "That isn't a cron schedule." })
+    const { repo, config, workflow } = yield* pushable(user, owner, name)
+    const now = readSettings(config, workflow)
+    const files: GitHub.File[] = []
+    const nextConfig = withSettings(config, wanted)
+    if (nextConfig !== config) files.push({ path: ".autofork/config.json", content: nextConfig })
+    if (wanted.cron && wanted.cron !== now.cron) {
+      if (!workflow || now.cron === null) return yield* new Problem({ message: "This fork's autofork.yml has no schedule to change." })
+      files.push({ path: ".github/workflows/autofork.yml", content: withCron(workflow, wanted.cron) })
+    }
+    if (files.length) yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files)
+    return readSettings(nextConfig, files.some((file) => file.path.endsWith("autofork.yml")) ? withCron(workflow!, wanted.cron!) : workflow)
+  })
+
+/* GitHub's install page with this fork ticked: installing autofork's App on it is what links it */
+export const installLink = (user: User, owner: string, name: string, slug: string) =>
+  GitHub.request<GitHubRepo & { id: number; owner: { id: number } }>(user.token, "GET", `/repos/${owner}/${name}`).pipe(
+    Effect.map((repo) => {
+      const url = new URL(`https://github.com/apps/${slug}/installations/new/permissions`)
+      url.searchParams.set("suggested_target_id", String(repo.owner.id))
+      url.searchParams.append("repository_ids[]", String(repo.id))
+      return url
+    }),
   )

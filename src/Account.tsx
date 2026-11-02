@@ -106,7 +106,9 @@ export const Account = ({ login, avatar }: { login: string; avatar: string }) =>
         <p className="menu-who">
           Signed in as <b>{login}</b>
         </p>
-        <p className="menu-label">Your forks</p>
+        <Link className="menu-label" role="menuitem" tabIndex={-1} to="/forks" onClick={close}>
+          Your forks and spend
+        </Link>
         {seen ? <Forks login={login} onPick={close} /> : null}
         <hr />
         <SignOut />

@@ -163,9 +163,10 @@ const oauth = (params: Record<string, string>) =>
     }
   })
 
-export const exchange = (code: string) =>
+export const exchange = (code: string) => Effect.flatMap(oauth({ code }), identify)
+
+export const identify = (tokens: { token: string; refresh: string; expires: number }) =>
   Effect.gen(function* () {
-    const tokens = yield* oauth({ code })
     const user = yield* request<{ login: string; id: number; avatar_url: string }>(tokens.token, "GET", "/user")
     const installations = yield* request<{ installations: { account: { id: number } }[] }>(tokens.token, "GET", "/user/installations")
     const installed = installations.installations.some((installation) => installation.account.id === user.id)
@@ -173,6 +174,12 @@ export const exchange = (code: string) =>
   })
 
 type Tokens = Effect.Success<ReturnType<typeof oauth>>
+
+/* WorkOS hands back the GitHub token it got with autofork's App, and GitHub renews it with the App's own client */
+export const fromWorkOS = (github: { access_token: string; refresh_token?: string; expires_at?: number | string }): Tokens => {
+  const at = typeof github.expires_at === "string" ? Date.parse(github.expires_at) : github.expires_at && github.expires_at < 1e12 ? github.expires_at * 1000 : github.expires_at
+  return { token: github.access_token, refresh: github.refresh_token ?? "", expires: at || Number.MAX_SAFE_INTEGER }
+}
 
 /* GitHub rotates the refresh token each time it's spent, so requests that arrive together with the same
    cookie share one renewal instead of the second spending a dead token and signing the user out. */
