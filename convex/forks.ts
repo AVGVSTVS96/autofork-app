@@ -103,7 +103,8 @@ const withConfig = async (ctx: ActionCtx, installationId: number, names: string[
       })
       .join("\n")} }`
     const found = await request<{ data?: Record<string, { object: unknown } | null> | null }>(token, "POST", "graphql", { query }).catch(() => undefined)
-    kept.push(...chunk.filter((name, index) => linked.has(name.toLowerCase()) || !found?.body.data || found.body.data[`r${index}`]?.object))
+    /* A repo the token can't see may have joined after the token was minted, so only one seen without a config is left out */
+    kept.push(...chunk.filter((name, index) => linked.has(name.toLowerCase()) || !found?.body.data || found.body.data[`r${index}`]?.object !== null))
   }
   return kept
 }
