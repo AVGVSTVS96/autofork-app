@@ -79,6 +79,9 @@ export const LinkRoute = () => {
             </p>
             {state && "error" in state ? <p className="bad">{state.error}</p> : null}
             {state && "why" in state && state.why && WHY[state.why] ? <p className="bad">{WHY[state.why]}</p> : null}
+            {state && "linked" in state && !state.linked && !("why" in state) && !("checked" in state) ? (
+              <p className="fine">autofork.com doesn't say why a private fork isn't linked. If the app is already installed, check the two files below.</p>
+            ) : null}
             {error ? <p className="bad">{error}</p> : null}
             <p className="fine">Push your fork's .autofork/config.json and .github/workflows/autofork.yml first. To unlink, remove the app from the repo on GitHub.</p>
           </>

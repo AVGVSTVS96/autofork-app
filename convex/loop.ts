@@ -67,16 +67,21 @@ const mark = (key: string, found: Found) => {
   /* A moving tag like `nightly` keeps its name, so where it points is part of the mark */
   const newest = found.refs?.nodes[0]
   const tag = newest && `${newest.name}@${newest.target?.oid ?? ""}`
-  /* The engine takes a branch's newest commit whose checks passed, so the tip going green is news too */
-  if (kind === "branch") return found.ref?.target ? `${found.ref.target.oid} ${found.ref.target.statusCheckRollup?.state ?? ""}` : null
+  /* The engine builds a branch's newest commit whose checks passed (or that has none), so a tip still running or failing its checks isn't news yet */
+  if (kind === "branch") {
+    const target = found.ref?.target
+    const state = target?.statusCheckRollup?.state
+    return state && state !== "SUCCESS" ? undefined : (target?.oid ?? null)
+  }
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
   return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target?.oid ?? null
 }
 
-/* One odd answer from GitHub skips that upstream for this tick instead of stopping the loop */
+/* One odd answer from GitHub skips that upstream for this tick instead of stopping the loop; so does a branch whose tip isn't green yet */
 const markOf = (key: string, found: Found) => {
   try {
-    return mark(key, found) ?? ""
+    const now = mark(key, found)
+    return now === undefined ? undefined : (now ?? "")
   } catch (error) {
     console.warn(`loop: couldn't read ${key}: ${error}`)
     return undefined
@@ -105,13 +110,16 @@ const read = async (asks: Map<number, Set<string>>) => {
   await pool(jobs, async ({ installationId, keys }) => {
     const query = `{ ${keys.map((key, index) => `w${index}: ${fields(key)}`).join("\n")} }`
     try {
-      const { body } = await request<{ data?: Record<string, Found> | null; errors?: { path?: unknown[] }[] }>(
+      const { body } = await request<{ data?: Record<string, Found> | null; errors?: { path?: unknown[]; type?: string }[] }>(
         await installationToken(installationId),
         "POST",
         "graphql",
         { query },
       )
-      const failed = new Set((body.errors ?? []).filter((error) => error.path?.length === 1).map((error) => error.path?.[0]))
+      /* A missing repo, or a field this installation may not read, is an answer; anything else (a timeout, GitHub failing) means try again next tick */
+      const failed = new Set(
+        (body.errors ?? []).filter((error) => error.path?.length === 1 || !["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")).map((error) => error.path?.[0]),
+      )
       if (body.data)
         keys.forEach((key, index) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
