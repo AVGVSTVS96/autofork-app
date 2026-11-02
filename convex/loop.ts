@@ -43,9 +43,9 @@ type Found = {
   isPrivate: boolean
   latestRelease: { tagName: string } | null
   releases: { nodes: { tagName: string }[] }
-  refs: { nodes: { name: string }[] } | null
-  defaultBranchRef: { target: { oid: string } } | null
-  ref?: { target: { oid: string; statusCheckRollup?: { state: string } | null } } | null
+  refs: { nodes: { name: string; target: { oid: string } | null }[] } | null
+  defaultBranchRef: { target: { oid: string } | null } | null
+  ref?: { target: { oid: string; statusCheckRollup?: { state: string } | null } | null } | null
 } | null
 
 const fields = (key: string) => {
@@ -55,7 +55,7 @@ const fields = (key: string) => {
     isPrivate
     latestRelease { tagName }
     releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName } }
-    refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name } }
+    refs(refPrefix: "refs/tags/", first: 1, orderBy: { field: TAG_COMMIT_DATE, direction: DESC }) { nodes { name target { oid } } }
     defaultBranchRef { target { oid } }
     ${kind === "branch" ? `ref(qualifiedName: ${JSON.stringify(`refs/heads/${branch}`)}) { target { oid ... on Commit { statusCheckRollup { state } } } }` : ""}
   }`
@@ -64,11 +64,23 @@ const fields = (key: string) => {
 const mark = (key: string, found: Found) => {
   if (!found) return null
   const kind = key.split(" ")[1]
-  const tag = found.refs?.nodes[0]?.name
+  /* A moving tag like `nightly` keeps its name, so where it points is part of the mark */
+  const newest = found.refs?.nodes[0]
+  const tag = newest && `${newest.name}@${newest.target?.oid ?? ""}`
   /* The engine takes a branch's newest commit whose checks passed, so the tip going green is news too */
-  if (kind === "branch") return found.ref ? `${found.ref.target.oid} ${found.ref.target.statusCheckRollup?.state ?? ""}` : null
+  if (kind === "branch") return found.ref?.target ? `${found.ref.target.oid} ${found.ref.target.statusCheckRollup?.state ?? ""}` : null
   if (kind === "channel") return `${found.releases.nodes[0]?.tagName ?? ""} ${tag ?? ""}`
-  return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target.oid ?? null
+  return found.latestRelease?.tagName ?? tag ?? found.defaultBranchRef?.target?.oid ?? null
+}
+
+/* One odd answer from GitHub skips that upstream for this tick instead of stopping the loop */
+const markOf = (key: string, found: Found) => {
+  try {
+    return mark(key, found) ?? ""
+  } catch (error) {
+    console.warn(`loop: couldn't read ${key}: ${error}`)
+    return undefined
+  }
 }
 
 const CHUNK = 50
@@ -138,7 +150,8 @@ export const tick = internalAction({
       const read = found ?? second.get(`${fork.installationId} ${key}`)
       if (read === undefined) return []
       /* "" records that upstream had nothing to follow yet, so the first thing it publishes still starts a run */
-      const now = mark(key, read) ?? ""
+      const now = markOf(key, read)
+      if (now === undefined) return []
       return fork.seen !== now ? [{ fork, watch: key, now }] : []
     })
     const quiet = due.filter(({ fork }) => fork.seen === null).map(({ fork, watch, now }) => ({ id: fork.id, watch, seen: now }))
