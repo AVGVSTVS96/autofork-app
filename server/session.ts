@@ -75,7 +75,7 @@ export const read = Effect.map(fromCookies, ({ main, saved }): Session => ({
 }))
 
 /* The WorkOS tokens live in their own cookie, tied to the GitHub user they came with, and each cookie is only sent back when it changed,
-   so a request that renews them and one that changes something else can't put back each other's old copy */
+   so renewing them and changing the main cookie don't overwrite each other */
 export const write = (session: Session) =>
   Effect.gen(function* () {
     const { account, ...rest } = session
