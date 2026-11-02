@@ -89,7 +89,7 @@ export const save = internalMutation({
     const row = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", fork.repoId)).unique()
     if (row && (row.readAt ?? 0) > fork.readAt) return
     const gone = await ctx.db.query("gone").withIndex("name", (q) => q.eq("name", fork.name)).unique()
-    if (gone && gone.at > fork.readAt) return
+    if (gone && gone.at > fork.readAt && (gone.installationId === undefined || gone.installationId === fork.installationId)) return
     if (gone) await ctx.db.delete(gone._id)
     for (const stale of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", fork.name)).collect())
       if (stale.repoId !== fork.repoId) {
@@ -101,11 +101,11 @@ export const save = internalMutation({
   },
 })
 
-/* Unlinking leaves a mark, so a refresh that read GitHub before it can't bring the row back */
-const forget = async (ctx: MutationCtx, name: string, at: number) => {
+/* Unlinking leaves a mark, so a refresh that read GitHub before it can't bring the row back; an uninstall's mark only stops that installation */
+const forget = async (ctx: MutationCtx, name: string, at: number, installationId?: number) => {
   const gone = await ctx.db.query("gone").withIndex("name", (q) => q.eq("name", name)).unique()
-  if (!gone) await ctx.db.insert("gone", { name, at })
-  else if (gone.at < at) await ctx.db.patch(gone._id, { at })
+  if (!gone) await ctx.db.insert("gone", { name, at, installationId })
+  else if (gone.at < at) await ctx.db.replace(gone._id, { name, at, installationId })
 }
 
 export const unlink = internalMutation({
@@ -120,9 +120,17 @@ export const unlink = internalMutation({
 export const unlinkInstallation = internalMutation({
   args: { installationId: v.number() },
   handler: async (ctx, { installationId }) => {
-    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect())
+    for (const row of await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()) {
       await ctx.db.delete(row._id)
+      await forget(ctx, row.name, Date.now(), installationId)
+    }
   },
+})
+
+export const namesOn = internalQuery({
+  args: { installationId: v.number() },
+  handler: async (ctx, { installationId }) =>
+    (await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()).map((row) => ({ full_name: row.name })),
 })
 
 export const byName = internalQuery({

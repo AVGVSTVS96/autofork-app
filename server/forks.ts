@@ -572,21 +572,21 @@ const contents = (token: string, owner: string, name: string, path: string, ref:
     Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
   )
 
+const settingsAt = (user: User, owner: string, name: string, ref: string) =>
+  Effect.all([contents(user.token, owner, name, ".autofork/config.json", ref), contents(user.token, owner, name, ".github/workflows/autofork.yml", ref)], { concurrency: 2 })
+
 const pushable = (user: User, owner: string, name: string) =>
   Effect.gen(function* () {
     const repo = yield* GitHub.request<GitHubRepo>(user.token, "GET", `/repos/${owner}/${name}`)
     if (!repo.permissions?.push) return yield* new Problem({ message: "That fork isn't yours." })
     const head = yield* GitHub.head(user.token, owner, name, repo.default_branch)
-    const [config, workflow] = yield* Effect.all(
-      [contents(user.token, owner, name, ".autofork/config.json", head), contents(user.token, owner, name, ".github/workflows/autofork.yml", head)],
-      { concurrency: 2 },
-    )
+    const [config, workflow] = yield* settingsAt(user, owner, name, head)
     if (config === null) return yield* new Problem({ message: `${owner}/${name} has no .autofork/config.json.` })
     return { repo, head, config, workflow }
   })
 
 export const settings = (user: User, owner: string, name: string) =>
-  Effect.map(pushable(user, owner, name), ({ config, workflow }) => readSettings(config, workflow))
+  Effect.map(pushable(user, owner, name), ({ head, config, workflow }) => ({ ...readSettings(config, workflow), head }))
 
 const fine = (limit: number) => Number.isFinite(limit) && limit >= 0 && limit <= 100_000
 
@@ -597,6 +597,11 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
     if (rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
     if (rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const { repo, head, config, workflow } = yield* pushable(user, owner, name)
+    if (wanted.head && wanted.head !== head) {
+      const [loadedConfig, loadedWorkflow] = yield* settingsAt(user, owner, name, wanted.head)
+      if (loadedConfig !== config || loadedWorkflow !== workflow)
+        return yield* new Problem({ message: `${owner}/${name}'s settings changed in the repo since this page loaded. Reload to see them.` })
+    }
     if (!parses(config)) return yield* new Problem({ message: `${owner}/${name}'s .autofork/config.json isn't valid JSON. Fix it in the repo first.` })
     const now = readSettings(config, workflow)
     if (workflow && cronLines(workflow) > 1 && wanted.cron !== now.cron)
@@ -611,22 +616,23 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
       if (!workflow || now.cron === null) return yield* new Problem({ message: "This fork's autofork.yml has no schedule to change." })
       files.push({ path: ".github/workflows/autofork.yml", content: withCron(workflow, wanted.cron) })
     }
-    if (files.length)
-      yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files, head).pipe(
+    const saved = files.length
+      ? yield* GitHub.commit(user.token, owner, name, repo.default_branch, "autofork: settings", files, head).pipe(
         Effect.catchIf(
-          (error) => error.status === 403 || error.status === 404 || error.status === 422,
+          (error) => error.status === 403 || error.status === 404 || error.status === 409,
           (error) =>
             Effect.fail(
               new Problem({
                 message:
-                  error.status === 422
-                    ? `${owner}/${name} changed while saving. Reload and save again.`
+                  error.status === 409
+                    ? `${owner}/${name} moved while saving. Save again.`
                     : `Install autofork on ${owner}/${name} to change its settings here, or edit .autofork/config.json in the repo.`,
               }),
             ),
         ),
       )
-    return readSettings(nextConfig, files.some((file) => file.path.endsWith("autofork.yml")) ? withCron(workflow!, wanted.cron!) : workflow)
+      : head
+    return { ...readSettings(nextConfig, files.some((file) => file.path.endsWith("autofork.yml")) ? withCron(workflow!, wanted.cron!) : workflow), head: saved }
   })
 
 /* The user's token only sees private repos the App is already on, so a private fork gets its owner's install page without the fork ticked */

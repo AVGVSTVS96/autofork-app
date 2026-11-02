@@ -51,7 +51,8 @@ export type Limits = typeof Limits.Type
 
 export const EVERY = { "5m": "2-59/5 * * * *", "15m": "7-59/15 * * * *", "1h": "17 * * * *", "1d": "17 6 * * *" } as const
 
-export const Settings = Schema.Struct({ cron: Schema.NullOr(Schema.String), follow: Schema.String, limits: Limits })
+/* `head` is the commit the settings were read at, so a save on top of a newer commit is refused */
+export const Settings = Schema.Struct({ cron: Schema.NullOr(Schema.String), follow: Schema.String, limits: Limits, head: Schema.optional(Schema.String) })
 export type Settings = typeof Settings.Type
 
 export const MyFork = Schema.Struct({

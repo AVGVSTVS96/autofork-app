@@ -21,6 +21,7 @@ export const request = async <A = unknown>(token: string, method: string, path: 
       ...(etag ? { "if-none-match": etag } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   })
   if (response.status === 304) return { changed: false as const, etag: etag ?? null, body: undefined as A }
   const text = await response.text()

@@ -237,7 +237,7 @@ export type File = { readonly path: string; readonly content: string | null }
 export const head = (token: string, owner: string, name: string, branch: string) =>
   Effect.map(request<{ object: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`), (ref) => ref.object.sha)
 
-/* Given `on`, the commit goes on top of that commit, and fails with a 422 if the branch has moved since */
+/* Given `on`, the commit goes on top of that commit, and fails with a 409 if the branch has moved since */
 export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>, on?: string) =>
   Effect.gen(function* () {
     const sha = on ?? (yield* head(token, owner, name, branch))
@@ -251,6 +251,8 @@ export const commit = (token: string, owner: string, name: string, branch: strin
       tree: tree.sha,
       parents: [sha],
     })
-    yield* request(token, "PATCH", `/repos/${owner}/${name}/git/refs/heads/${branch}`, { sha: created.sha })
+    yield* request(token, "PATCH", `/repos/${owner}/${name}/git/refs/heads/${branch}`, { sha: created.sha }).pipe(
+      Effect.mapError((error) => (error.status === 422 && /fast.forward/i.test(error.message) ? new GitHubError({ ...error, status: 409 }) : error)),
+    )
     return created.sha
   })
