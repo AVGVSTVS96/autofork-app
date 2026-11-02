@@ -3,7 +3,7 @@ import { internal } from "./_generated/api"
 import type { Id } from "./_generated/dataModel"
 import type { ActionCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
-import { GitHubError, installationToken, request } from "./github"
+import { dropToken, GitHubError, installationToken, request } from "./github"
 
 type Watched = {
   id: Id<"forks">
@@ -127,6 +127,7 @@ const read = async (asks: Map<number, Set<string>>) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
         })
     } catch (error) {
+      if (error instanceof GitHubError && error.status === 401) dropToken(installationId)
       console.warn(`installation ${installationId} couldn't check ${keys.length} upstreams: ${error}`)
     }
   })
@@ -185,6 +186,7 @@ export const tick = internalAction({
           console.log(`${watch} is at ${now}: started ${fork.name}`)
         } catch (error) {
           console.warn(`couldn't start ${fork.name}: ${error}`)
+          if (error instanceof GitHubError && error.status === 401) dropToken(fork.installationId)
           if (!(error instanceof GitHubError) || error.status >= 500 || error.status === 429 || error.status === 401) return
           await ctx.scheduler.runAfter(0, internal.forks.refresh, { name: fork.name }).catch(() => {})
         }

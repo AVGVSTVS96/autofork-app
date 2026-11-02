@@ -134,13 +134,6 @@ export const namesOn = internalQuery({
     (await ctx.db.query("forks").withIndex("installationId", (q) => q.eq("installationId", installationId)).collect()).map((row) => ({ full_name: row.name })),
 })
 
-export const uncheck = internalMutation({
-  args: { name: v.string() },
-  handler: async (ctx, { name }) => {
-    for (const row of await ctx.db.query("checks").withIndex("name", (q) => q.eq("name", name)).collect()) await ctx.db.delete(row._id)
-  },
-})
-
 export const byName = internalQuery({
   args: { name: v.string() },
   handler: (ctx, { name }) => ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).unique(),
