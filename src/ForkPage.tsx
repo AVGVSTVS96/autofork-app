@@ -2,7 +2,7 @@ import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { getRouteApi } from "@tanstack/react-router"
 import * as Option from "effect/Option"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
-import { useEffect, useMemo, useState } from "react"
+import { Component, lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react"
 import type { Fork, Run } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { repoIcon } from "./known.ts"
@@ -10,13 +10,28 @@ import { ClaudeIcon, Composer, ForkIcon, GitHubIcon, Item, Nav, OpenAIIcon, Retr
 
 const route = getRouteApi("/$owner/$name")
 
-export const ForkRoute = () => {
-  const { owner, name } = route.useParams()
-  const { since } = route.useSearch()
-  return <ForkPage owner={owner} name={name} since={since} />
+const UNAVAILABLE = <p className="fine bad">Couldn't load your spend and settings. Reload the page.</p>
+
+class Contained extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError = () => ({ failed: true })
+  render = () => (this.state.failed ? UNAVAILABLE : this.props.children)
 }
 
-const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: string | undefined }) => {
+const Yours = lazy(() =>
+  import("./Yours.tsx").then(
+    (module) => ({ default: module.Yours }),
+    () => ({ default: (_: { owner: string; name: string }) => UNAVAILABLE }),
+  ),
+)
+
+export const ForkRoute = () => {
+  const { owner, name } = route.useParams()
+  const { since, error } = route.useSearch()
+  return <ForkPage owner={owner} name={name} since={since} error={error} />
+}
+
+const ForkPage = ({ owner, name, since, error }: { owner: string; name: string; since: string | undefined; error: string | undefined }) => {
   const atom = useMemo(() => client.fork(owner, name), [owner, name])
   useTitle(`${owner}/${name} · autofork`)
   const result = useAtomValue(atom)
@@ -56,6 +71,7 @@ const ForkPage = ({ owner, name, since }: { owner: string; name: string; since: 
         </a>
       </Nav>
       <main className="fork">
+        {error ? <p className="bad">{error}</p> : null}
         {fork ? (
           <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} yours={AsyncResult.isSuccess(mine) && mine.value} />
         ) : AsyncResult.isFailure(result) ? (
@@ -143,7 +159,16 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
       ) : null}
 
       <Progress run={run} waiting={waiting} fork={fork} />
-      {yours ? <More owner={fork.owner} name={fork.name} /> : null}
+      {yours ? (
+        <>
+          <More owner={fork.owner} name={fork.name} />
+          <Contained>
+            <Suspense>
+              <Yours owner={fork.owner} name={fork.name} />
+            </Suspense>
+          </Contained>
+        </>
+      ) : null}
     </>
   )
 }

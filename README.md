@@ -14,7 +14,7 @@ The app behind [autofork.com](https://autofork.com): name an open source repo an
                     on your own plan, and rebuilds it on every release
 ```
 
-The sign-in goes straight into your fork as an Actions secret (`CLAUDE_CODE_OAUTH_TOKEN` or `CODEX_AUTH`). The app keeps no database and stores no tokens: your GitHub session is an encrypted cookie, and everything else is read from your fork. When Codex refreshes its sign-in during a run, the workflow sends it back with its GitHub OIDC token and the app writes it to the same secret.
+The sign-in goes straight into your fork as an Actions secret (`CLAUDE_CODE_OAUTH_TOKEN` or `CODEX_AUTH`). The app stores no tokens: your GitHub and WorkOS sessions are encrypted cookies, and settings are read from your fork. Its Convex database keeps linked forks, rebuild costs, and which signed-in people may see which fork's spend. When Codex refreshes its sign-in during a run, the workflow sends it back with its GitHub OIDC token and the app writes it to the same secret.
 
 The engine is [autofork](https://github.com/AVGVSTVS96/autofork), the GitHub Action every fork runs.
 
@@ -29,7 +29,7 @@ bun install
 bun run dev
 ```
 
-`.env.local` needs a GitHub App (contents, workflows, actions, secrets and administration write, user authorization on install):
+`.env.local` needs a GitHub App (contents, workflows, actions, secrets and administration write, email addresses read, user authorization on install), a WorkOS environment whose GitHub sign-in uses that App and returns its tokens, and a Convex deployment (`bunx convex dev`):
 
 ```
 GITHUB_APP_ID=
@@ -38,7 +38,16 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_PRIVATE_KEY=
 SESSION_SECRET=
+WORKOS_CLIENT_ID=
+WORKOS_API_KEY=
+VITE_CONVEX_URL=
+CONVEX_SITE_URL=
+AUTOFORK_SERVER_SECRET=
 ```
+
+The Convex deployment needs `GITHUB_CLIENT_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (the App's webhook secret), `WORKOS_CLIENT_ID` and the same `AUTOFORK_SERVER_SECRET`. The App's callback URLs are `https://<your site>/api/github/callback` first (GitHub sends people there after installing), then WorkOS's GitHub redirect URI. The App subscribes to Push events, with its webhook at `https://<your site>/api/github/hook` and that secret.
+
+`vercel.json` sends `/api/ledger`, `/api/ledger/close`, `/api/link` and `/api/github/hook` to autofork.com's Convex deployment: point them at yours. `bun run dev` doesn't apply those rewrites, so locally they're at `<CONVEX_SITE_URL>/ledger` and so on.
 
 ## License
 

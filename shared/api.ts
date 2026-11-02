@@ -44,7 +44,24 @@ export type ForkState = typeof ForkState.Type
 
 export const Started = Schema.Struct({ owner: Schema.String, name: Schema.String })
 
-export const MyFork = Schema.Struct({ owner: Schema.String, name: Schema.String, upstream: Schema.NullOr(Schema.String) })
+export const LIMITS = { rebuilds: 10, month: 200, rebuild: 20 } as const
+
+export const Limits = Schema.Struct({ rebuilds: Schema.Number, month: Schema.Number, rebuild: Schema.Number })
+export type Limits = typeof Limits.Type
+
+export const EVERY = { "5m": "2-59/5 * * * *", "15m": "7-59/15 * * * *", "1h": "17 * * * *", "1d": "17 6 * * *" } as const
+
+/* `head` is the commit the settings were read at, so a save on top of a newer commit is refused */
+export const Settings = Schema.Struct({ cron: Schema.NullOr(Schema.String), follow: Schema.String, limits: Limits, head: Schema.optional(Schema.String) })
+export type Settings = typeof Settings.Type
+
+export const MyFork = Schema.Struct({
+  owner: Schema.String,
+  name: Schema.String,
+  upstream: Schema.NullOr(Schema.String),
+  repoId: Schema.Number,
+  settings: Settings,
+})
 export type MyFork = typeof MyFork.Type
 
 export const DeviceCode = Schema.Struct({ code: Schema.String, url: Schema.String })
@@ -121,6 +138,9 @@ export const AppGroup = HttpApiGroup.make("app")
     }),
     HttpApiEndpoint.get("fork", "/api/forks/:owner/:name", { params: fork, success: Fork, error: Problem }),
     HttpApiEndpoint.get("yours", "/api/forks/:owner/:name/yours", { params: fork, success: Schema.Boolean }),
+    HttpApiEndpoint.get("settings", "/api/forks/:owner/:name/settings", { params: fork, success: Settings, error: [Problem, SignedOut] }),
+    HttpApiEndpoint.put("saveSettings", "/api/forks/:owner/:name/settings", { params: fork, payload: Settings, success: Settings, error: [Problem, SignedOut] }),
+    HttpApiEndpoint.get("convexToken", "/api/auth/token", { query: { fresh: Schema.optional(Schema.String) }, success: Schema.Struct({ token: Schema.String }), error: SignedOut }),
     HttpApiEndpoint.post("addChange", "/api/forks/:owner/:name/changes", {
       params: fork,
       payload: Schema.Struct({ change: Schema.String }),

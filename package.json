@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy": "if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then convex deploy --cmd 'vite build'; else vite build; fi"
   },
   "dependencies": {
     "@effect/atom-react": "4.0.3",
     "@effect/platform-browser": "4.0.3",
     "@noble/hashes": "2",
     "@tanstack/react-router": "1.170.42",
+    "convex": "1.49.0",
     "effect": "4.0.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",

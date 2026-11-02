@@ -15,14 +15,18 @@ export type User = {
   readonly expires: number
 }
 
+export type Account = { readonly id: string; readonly access: string; readonly refresh: string }
+
 export type Session = {
   readonly user?: User
-  readonly signIn?: { readonly state: string; readonly back: string }
+  readonly account?: Account
+  readonly signIn?: { readonly state: string; readonly back: string; readonly verify?: string }
   readonly claude?: { readonly verifier: string; readonly state: string }
   readonly chatgpt?: { readonly id: string; readonly code: string; readonly at?: number }
 }
 
 const COOKIE = "autofork"
+const ACCOUNT = "autofork-account"
 const text = new TextEncoder()
 
 const aes = Effect.gen(function* () {
@@ -38,7 +42,7 @@ const aes = Effect.gen(function* () {
   )
 })
 
-const encrypt = (session: Session) =>
+const encrypt = (session: Session | Saved) =>
   Effect.gen(function* () {
     const key = yield* aes
     const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -46,33 +50,43 @@ const encrypt = (session: Session) =>
     return Buffer.concat([iv, new Uint8Array(sealed)]).toString("base64url")
   })
 
-const decrypt = (cookie: string) =>
+const decrypt = <A = Session>(cookie: string) =>
   Effect.gen(function* () {
     const key = yield* aes
     const bytes = Buffer.from(cookie, "base64url")
     const plain = yield* Effect.tryPromise(() => crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.subarray(0, 12) }, key, bytes.subarray(12)))
-    return JSON.parse(new TextDecoder().decode(plain)) as Session
-  }).pipe(Effect.orElseSucceed((): Session => ({})))
+    return JSON.parse(new TextDecoder().decode(plain)) as A
+  }).pipe(Effect.orElseSucceed(() => ({}) as A))
 
-export const read = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest
-  const cookie = request.cookies[COOKIE]
-  return cookie ? yield* decrypt(cookie) : ({} as Session)
+const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: "30 days" } as const
+
+type Saved = { account?: Account; user?: number }
+
+const fromCookies = Effect.gen(function* () {
+  const { cookies } = yield* HttpServerRequest.HttpServerRequest
+  const main: Session = cookies[COOKIE] ? yield* decrypt(cookies[COOKIE]) : {}
+  const saved: Saved = cookies[ACCOUNT] ? yield* decrypt<Saved>(cookies[ACCOUNT]) : {}
+  return { main, saved }
 })
 
+export const read = Effect.map(fromCookies, ({ main, saved }): Session => ({
+  ...main,
+  account: main.user && saved.user === main.user.id ? saved.account : undefined,
+}))
+
+/* The WorkOS tokens live in their own cookie, tied to the GitHub user they came with, and each cookie is only sent back when it changed,
+   so renewing them and changing the main cookie don't overwrite each other */
 export const write = (session: Session) =>
   Effect.gen(function* () {
-    const value = yield* encrypt(session)
+    const { account, ...rest } = session
+    const { main, saved } = yield* fromCookies
+    const { account: _, ...restBefore } = main
+    const next: Saved = account ? { account, user: rest.user?.id ?? saved.user } : {}
+    const changes: [string, string][] = []
+    if (JSON.stringify(rest) !== JSON.stringify(restBefore)) changes.push([COOKIE, yield* encrypt(rest)])
+    if (JSON.stringify(next) !== JSON.stringify(saved)) changes.push([ACCOUNT, yield* encrypt(next)])
     yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-      Effect.succeed(
-        HttpServerResponse.setCookieUnsafe(response, COOKIE, value, {
-          httpOnly: true,
-          secure: true,
-          sameSite: "lax",
-          path: "/",
-          maxAge: "30 days",
-        }),
-      ),
+      Effect.succeed(changes.reduce((answer, [name, value]) => HttpServerResponse.setCookieUnsafe(answer, name, value, COOKIE_OPTIONS), response)),
     )
   })
 

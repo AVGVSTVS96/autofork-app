@@ -163,9 +163,10 @@ const oauth = (params: Record<string, string>) =>
     }
   })
 
-export const exchange = (code: string) =>
+export const exchange = (code: string) => Effect.flatMap(oauth({ code }), identify)
+
+export const identify = (tokens: { token: string; refresh: string; expires: number }) =>
   Effect.gen(function* () {
-    const tokens = yield* oauth({ code })
     const user = yield* request<{ login: string; id: number; avatar_url: string }>(tokens.token, "GET", "/user")
     const installations = yield* request<{ installations: { account: { id: number } }[] }>(tokens.token, "GET", "/user/installations")
     const installed = installations.installations.some((installation) => installation.account.id === user.id)
@@ -173,6 +174,12 @@ export const exchange = (code: string) =>
   })
 
 type Tokens = Effect.Success<ReturnType<typeof oauth>>
+
+export const fromWorkOS = (github: { access_token: string; refresh_token?: string; expires_at?: number | string }): Tokens => {
+  const at = typeof github.expires_at === "string" ? Date.parse(github.expires_at) : github.expires_at && github.expires_at < 1e12 ? github.expires_at * 1000 : github.expires_at
+  const refresh = github.refresh_token ?? ""
+  return { token: github.access_token, refresh, expires: Number.isFinite(at) && at ? at : refresh ? Date.now() + 8 * 3_600_000 : Number.MAX_SAFE_INTEGER }
+}
 
 /* GitHub rotates the refresh token each time it's spent, so requests that arrive together with the same
    cookie share one renewal instead of the second spending a dead token and signing the user out. */
@@ -227,10 +234,14 @@ export const deleteSecret = (token: string, owner: string, name: string, secret:
 /* A null content deletes the file */
 export type File = { readonly path: string; readonly content: string | null }
 
-export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>) =>
+export const head = (token: string, owner: string, name: string, branch: string) =>
+  Effect.map(request<{ object: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`), (ref) => ref.object.sha)
+
+/* Given `on`, the commit goes on top of that commit, and fails with a 409 if the branch has moved since */
+export const commit = (token: string, owner: string, name: string, branch: string, message: string, files: ReadonlyArray<File>, on?: string) =>
   Effect.gen(function* () {
-    const ref = yield* request<{ object: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/ref/heads/${branch}`)
-    const parent = yield* request<{ tree: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/commits/${ref.object.sha}`)
+    const sha = on ?? (yield* head(token, owner, name, branch))
+    const parent = yield* request<{ tree: { sha: string } }>(token, "GET", `/repos/${owner}/${name}/git/commits/${sha}`)
     const tree = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/trees`, {
       base_tree: parent.tree.sha,
       tree: files.map(({ path, content }) => ({ path, mode: "100644", type: "blob", ...(content === null ? { sha: null } : { content }) })),
@@ -238,8 +249,10 @@ export const commit = (token: string, owner: string, name: string, branch: strin
     const created = yield* request<{ sha: string }>(token, "POST", `/repos/${owner}/${name}/git/commits`, {
       message,
       tree: tree.sha,
-      parents: [ref.object.sha],
+      parents: [sha],
     })
-    yield* request(token, "PATCH", `/repos/${owner}/${name}/git/refs/heads/${branch}`, { sha: created.sha })
+    yield* request(token, "PATCH", `/repos/${owner}/${name}/git/refs/heads/${branch}`, { sha: created.sha }).pipe(
+      Effect.mapError((error) => (error.status === 422 && /fast.forward/i.test(error.message) ? new GitHubError({ ...error, status: 409 }) : error)),
+    )
     return created.sha
   })

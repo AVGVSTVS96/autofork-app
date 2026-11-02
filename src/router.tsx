@@ -21,8 +21,36 @@ const home = createRoute({
 const fork = createRoute({
   getParentRoute: () => root,
   path: "/$owner/$name",
-  validateSearch: (search: Record<string, unknown>): { since?: string } => (typeof search.since === "string" ? { since: search.since } : {}),
+  validateSearch: (search: Record<string, unknown>): { since?: string; error?: string } => ({
+    ...(typeof search.since === "string" ? { since: search.since } : {}),
+    ...(typeof search.error === "string" ? { error: search.error } : {}),
+  }),
   component: lazyRouteComponent(() => import("./ForkPage.tsx"), "ForkRoute"),
+})
+
+const forks = createRoute({
+  getParentRoute: () => root,
+  path: "/forks",
+  validateSearch: (search: Record<string, unknown>): { error?: string } => (typeof search.error === "string" ? { error: search.error } : {}),
+  component: lazyRouteComponent(() => import("./Dashboard.tsx"), "Dashboard"),
+})
+
+const link = createRoute({
+  getParentRoute: () => root,
+  path: "/link/$owner/$name",
+  validateSearch: (search: Record<string, unknown>): { error?: string } => (typeof search.error === "string" ? { error: search.error } : {}),
+  component: lazyRouteComponent(() => import("./LinkPage.tsx"), "LinkRoute"),
+})
+
+const verify = createRoute({
+  getParentRoute: () => root,
+  path: "/verify",
+  validateSearch: (search: Record<string, unknown>): { email?: string; error?: string; back?: string } => ({
+    ...(typeof search.email === "string" ? { email: search.email } : {}),
+    ...(typeof search.back === "string" && /^\/(?![/\\])[^\\\s\p{Cc}]*$/u.test(search.back) ? { back: search.back } : {}),
+    ...(typeof search.error === "string" ? { error: search.error } : {}),
+  }),
+  component: lazyRouteComponent(() => import("./Verify.tsx"), "VerifyRoute"),
 })
 
 const asking = (location: ParsedLocation) => "q" in location.search
@@ -33,7 +61,7 @@ const forkIt = ({ fromLocation: from, toLocation: to }: { fromLocation?: ParsedL
     : false
 
 export const makeRouter = (history?: RouterHistory) =>
-  createRouter({ routeTree: root.addChildren([home, fork]), defaultViewTransition: { types: forkIt }, ...(history ? { history } : {}) })
+  createRouter({ routeTree: root.addChildren([home, forks, link, verify, fork]), defaultViewTransition: { types: forkIt }, ...(history ? { history } : {}) })
 
 declare module "@tanstack/react-router" {
   interface Register {

@@ -1,9 +1,14 @@
 {
+  "buildCommand": "bun run deploy",
   "headers": [
     { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "/(repos|fonts)/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }] }
   ],
   "rewrites": [
+    { "source": "/api/ledger", "destination": "https://superb-mosquito-26.convex.site/ledger" },
+    { "source": "/api/ledger/close", "destination": "https://superb-mosquito-26.convex.site/ledger/close" },
+    { "source": "/api/link", "destination": "https://superb-mosquito-26.convex.site/link" },
+    { "source": "/api/github/hook", "destination": "https://superb-mosquito-26.convex.site/github/hook" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/", "has": [{ "type": "query", "key": "q" }], "destination": "/app.html" },
     { "source": "/", "destination": "/home.html" },
