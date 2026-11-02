@@ -60,3 +60,13 @@ export const close = internalMutation({
     return true
   },
 })
+
+/* GitHub ends any job after 6 hours, so a rebuild still open after that never reported; it closes as stopped and keeps its cap, since what it spent is unknown */
+export const expire = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - 6 * 3_600_000
+    for (const row of await ctx.db.query("rebuilds").withIndex("status", (q) => q.eq("status", "running").lt("_creationTime", cutoff)).take(500))
+      await ctx.db.patch(row._id, { status: "stopped", endedAt: Date.now() })
+  },
+})

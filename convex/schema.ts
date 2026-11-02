@@ -33,7 +33,9 @@ export default defineSchema({
     outputTokens: v.union(v.number(), v.null()),
     status: v.union(v.literal("running"), v.literal("done"), v.literal("stopped")),
     endedAt: v.union(v.number(), v.null()),
-  }).index("repoId", ["repoId"]),
+  })
+    .index("repoId", ["repoId"])
+    .index("status", ["status"]),
   access: defineTable({ user: v.string(), repos: v.array(v.object({ id: v.number(), name: v.string(), at: v.optional(v.number()) })) }).index("user", ["user"]),
   gone: defineTable({ name: v.string(), at: v.number(), installationId: v.optional(v.number()) }).index("name", ["name"]).index("at", ["at"]),
 })
