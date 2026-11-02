@@ -2,7 +2,8 @@ import { LIMITS, type Limits, type Settings } from "./api.ts"
 
 const CRON = /^([ \t]*-[ \t]*cron:[ \t]*)(["']?)([^"'\s#](?:[^"'\n#]*[^"'\s#])?)\2([ \t]*(?:#.*)?)$/m
 
-export const cronLines = (workflow: string) => workflow.match(new RegExp(CRON.source, "gm"))?.length ?? 0
+/* Counts every line that looks like a schedule, even ones CRON can't read, so a file with any second schedule is left alone */
+export const cronLines = (workflow: string) => workflow.match(/^[ \t]*-?[ \t]*\{?[ \t]*["']?cron["']?[ \t]*:/gm)?.length ?? 0
 
 export const cronLine = (workflow: string | null) => workflow?.match(CRON)?.[3]?.trim() ?? null
 
