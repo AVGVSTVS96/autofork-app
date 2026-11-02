@@ -686,6 +686,7 @@ nav .links > :last-child { view-transition-name: me; }
 .spend, .settings { padding: 18px 22px; }
 .meter { display: block; height: 6px; margin: 2px 0 10px; border-radius: 3px; background: var(--tint); overflow: hidden; }
 .fine a { color: var(--you); font-weight: 600; }
+.fine.bad { color: var(--del); }
 .meter i { display: block; height: 100%; border-radius: inherit; background: var(--you); transition: width .4s var(--out); }
 .spend .item { padding: 10px 0; font-size: 15px; }
 .spend .item + .item, .spend .meter + .list .item:first-child { border-top: 1px solid var(--hair); }

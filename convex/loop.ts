@@ -125,18 +125,27 @@ export const tick = internalAction({
     const pending = watches.flatMap((watch) => watch.forks.map((fork) => ({ fork, key: watch.key, found: forFork(watch.key, fork) })))
     const second = own.size ? await read(own) : new Map<string, Found>()
     const due = pending.flatMap(({ fork, key, found }) => {
-      const now = mark(key, found ?? second.get(`${fork.installationId} ${key}`) ?? null)
-      return now && fork.seen !== now ? [{ fork, watch: key, now }] : []
+      const read = found ?? second.get(`${fork.installationId} ${key}`)
+      if (read === undefined) return []
+      /* "" records that upstream had nothing to follow yet, so the first thing it publishes still starts a run */
+      const now = mark(key, read) ?? ""
+      return fork.seen !== now ? [{ fork, watch: key, now }] : []
     })
     const quiet = due.filter(({ fork }) => fork.seen === null).map(({ fork, watch, now }) => ({ id: fork.id, watch, seen: now }))
-    if (quiet.length) await ctx.runMutation(internal.loop.seen, { forks: quiet })
+    for (let at = 0; at < quiet.length; at += 1000) await ctx.runMutation(internal.loop.seen, { forks: quiet.slice(at, at + 1000) })
     await pool(
-      due.filter(({ fork }) => fork.seen !== null),
+      due.filter(({ fork, now }) => fork.seen !== null && now !== ""),
       async ({ fork, watch, now }) => {
         const token = await installationToken(fork.installationId).catch((error) => console.warn(`no token for ${fork.name}: ${error}`))
         if (!token) return
+        const dispatch = () => request(token, "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
         try {
-          await request(token, "POST", `repos/${fork.name}/actions/workflows/autofork.yml/dispatches`, { ref: fork.branch })
+          /* GitHub disables a quiet public repo's scheduled workflows after 60 days; switch it back on */
+          await dispatch().catch(async (error) => {
+            if (!(error instanceof GitHubError && error.status === 422 && /disabled/i.test(error.message))) throw error
+            await request(token, "PUT", `repos/${fork.name}/actions/workflows/autofork.yml/enable`)
+            await dispatch()
+          })
           console.log(`${watch} is at ${now}: started ${fork.name}`)
         } catch (error) {
           console.warn(`couldn't start ${fork.name}: ${error}`)

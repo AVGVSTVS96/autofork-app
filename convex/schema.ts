@@ -12,6 +12,7 @@ export default defineSchema({
     watch: v.union(v.string(), v.null()),
     cron: v.union(v.string(), v.null()),
     seen: v.optional(v.string()),
+    readAt: v.optional(v.number()),
   })
     .index("repoId", ["repoId"])
     .index("name", ["name"])

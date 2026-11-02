@@ -20,33 +20,34 @@ export const watchFor = (upstream: string, given: string | undefined) => {
 }
 
 export const refresh = internalAction({
-  args: { name: v.string(), ref: v.optional(v.string()) },
+  args: { name: v.string() },
   handler: async (ctx, args): Promise<{ linked: boolean; cron: string | null }> => {
     const name = args.name.toLowerCase()
+    const readAt = Date.now()
     const [owner = "", repo = ""] = name.split("/")
     const installationId = await repoInstallation(owner, repo)
     if (!installationId) {
-      await ctx.runMutation(internal.forks.unlink, { name })
+      await ctx.runMutation(internal.forks.unlink, { name, readAt })
       return { linked: false, cron: null }
     }
     const token = await installationToken(installationId)
     const { body: found } = await request<{ id: number; full_name: string; default_branch: string }>(token, "GET", `repos/${name}`)
     const [config, workflow] = await Promise.all([
-      file(token, found.full_name, ".autofork/config.json", args.ref ?? found.default_branch),
-      file(token, found.full_name, ".github/workflows/autofork.yml", args.ref ?? found.default_branch),
+      file(token, found.full_name, ".autofork/config.json", found.default_branch),
+      file(token, found.full_name, ".github/workflows/autofork.yml", found.default_branch),
     ])
     let settings: { upstream?: unknown; follow?: unknown } | undefined
     try {
       settings = config ? JSON.parse(config) : undefined
     } catch {}
     if (typeof settings?.upstream !== "string" || workflow === null) {
-      await ctx.runMutation(internal.forks.unlink, { name })
+      await ctx.runMutation(internal.forks.unlink, { name, readAt })
       return { linked: false, cron: null }
     }
     const follow = typeof settings.follow === "string" ? settings.follow : undefined
     const watch = watchFor(settings.upstream, follow)
     if (!watch) {
-      await ctx.runMutation(internal.forks.unlink, { name })
+      await ctx.runMutation(internal.forks.unlink, { name, readAt })
       return { linked: false, cron: null }
     }
     const cron = cronLine(workflow)
@@ -59,6 +60,7 @@ export const refresh = internalAction({
       follow: follow ?? "releases",
       watch,
       cron,
+      readAt,
     })
     return { linked: true, cron }
   },
@@ -74,20 +76,24 @@ export const save = internalMutation({
     follow: v.string(),
     watch: v.union(v.string(), v.null()),
     cron: v.union(v.string(), v.null()),
+    readAt: v.number(),
   },
+  /* Refreshes run side by side, so the one that read GitHub last wins, whichever finishes last */
   handler: async (ctx, fork) => {
     for (const stale of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", fork.name)).collect())
       if (stale.repoId !== fork.repoId) await ctx.db.delete(stale._id)
     const row = await ctx.db.query("forks").withIndex("repoId", (q) => q.eq("repoId", fork.repoId)).unique()
+    if (row && (row.readAt ?? 0) > fork.readAt) return
     if (row) await ctx.db.replace(row._id, { ...fork, ...(row.watch === fork.watch && row.seen ? { seen: row.seen } : {}) })
     else await ctx.db.insert("forks", fork)
   },
 })
 
 export const unlink = internalMutation({
-  args: { name: v.string() },
-  handler: async (ctx, { name }) => {
-    for (const row of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).collect()) await ctx.db.delete(row._id)
+  args: { name: v.string(), readAt: v.optional(v.number()) },
+  handler: async (ctx, { name, readAt = Date.now() }) => {
+    for (const row of await ctx.db.query("forks").withIndex("name", (q) => q.eq("name", name)).collect())
+      if ((row.readAt ?? 0) <= readAt) await ctx.db.delete(row._id)
   },
 })
 

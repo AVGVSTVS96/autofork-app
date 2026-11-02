@@ -45,7 +45,7 @@ CONVEX_SITE_URL=
 AUTOFORK_SERVER_SECRET=
 ```
 
-The Convex deployment needs `GITHUB_CLIENT_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (the App's webhook secret), `WORKOS_CLIENT_ID` and the same `AUTOFORK_SERVER_SECRET`. The App subscribes to Push events, with its webhook at `https://<your site>/api/github/hook` and that secret.
+The Convex deployment needs `GITHUB_CLIENT_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (the App's webhook secret), `WORKOS_CLIENT_ID` and the same `AUTOFORK_SERVER_SECRET`. The App's callback URLs are `https://<your site>/api/github/callback` first (GitHub sends people there after installing), then WorkOS's GitHub redirect URI. The App subscribes to Push events, with its webhook at `https://<your site>/api/github/hook` and that secret.
 
 `vercel.json` sends `/api/ledger`, `/api/ledger/close`, `/api/link` and `/api/github/hook` to autofork.com's Convex deployment: point them at yours. `bun run dev` doesn't apply those rewrites, so locally they're at `<CONVEX_SITE_URL>/ledger` and so on.
 

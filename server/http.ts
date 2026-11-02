@@ -48,9 +48,12 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("mine", () =>
       github(
         Effect.gen(function* () {
-          const { forks, complete } = yield* Forks.mine(yield* GitHub.signedIn)
+          const { forks, complete, denied } = yield* Forks.mine(yield* GitHub.signedIn)
           const { account } = yield* Session.read
-          if (account) yield* allow(account.id, forks.map((fork) => ({ id: fork.repoId, name: `${fork.owner}/${fork.name}` })), complete ? "replace" : "add")
+          if (account) {
+            yield* allow(account.id, forks.map((fork) => ({ id: fork.repoId, name: `${fork.owner}/${fork.name}` })), complete ? "replace" : "add")
+            if (!complete && denied.length) yield* allow(account.id, denied, "drop")
+          }
           return forks
         }),
       ),
@@ -63,7 +66,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
         }),
       ),
     )
-    .handle("convexToken", () => convexToken)
+    .handle("convexToken", ({ query }) => convexToken(query.fresh === "1"))
     .handle("prepare", ({ payload }) => github(GitHub.signedIn.pipe(Effect.flatMap((user) => Forks.prepare(user, payload.owner, payload.name, payload.into, payload.preview ?? false)))))
     .handle("claudeStart", () =>
       Effect.gen(function* () {
@@ -113,8 +116,8 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
         if (!user) return false
         const repo = yield* Forks.yours(user, params.owner, params.name)
         const { account } = yield* Session.read
-        if (account && repo !== undefined) yield* allow(account.id, [repo ?? { id: 0, name: `${params.owner}/${params.name}` }], repo ? "add" : "drop")
-        return !!repo
+        if (account && repo) yield* allow(account.id, [{ id: repo.id, name: repo.name }], repo.push ? "add" : "drop")
+        return !!repo?.push
       }),
     )
     .handle("addChange", ({ params, payload }) =>
@@ -276,10 +279,10 @@ const allow = (user: string, repos: { id: number; name: string }[], mode: "repla
 /* WorkOS spends a refresh token once, so requests that arrive together with the same cookie share one renewal */
 const renewals = new Map<string, Promise<Exit.Exit<WorkOS.Signed, unknown>>>()
 
-const convexToken = Effect.gen(function* () {
+const convexToken = (fresh: boolean) => Effect.gen(function* () {
   const { account } = yield* Session.read
   if (!account) return yield* new SignedOut()
-  if (WorkOS.expiry(account.access) > Date.now() + 60_000) return { token: account.access }
+  if (!fresh && WorkOS.expiry(account.access) > Date.now() + 60_000) return { token: account.access }
   const env = yield* Env.Env
   if (!renewals.has(account.refresh)) {
     const renewal = Effect.runPromiseExit(WorkOS.refreshed(account.refresh).pipe(Effect.provideService(Env.Env, env)))

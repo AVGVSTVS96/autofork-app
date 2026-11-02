@@ -21,7 +21,10 @@ const home = createRoute({
 const fork = createRoute({
   getParentRoute: () => root,
   path: "/$owner/$name",
-  validateSearch: (search: Record<string, unknown>): { since?: string } => (typeof search.since === "string" ? { since: search.since } : {}),
+  validateSearch: (search: Record<string, unknown>): { since?: string; error?: string } => ({
+    ...(typeof search.since === "string" ? { since: search.since } : {}),
+    ...(typeof search.error === "string" ? { error: search.error } : {}),
+  }),
   component: lazyRouteComponent(() => import("./ForkPage.tsx"), "ForkRoute"),
 })
 

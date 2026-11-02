@@ -139,7 +139,7 @@ export const AppGroup = HttpApiGroup.make("app")
     HttpApiEndpoint.get("yours", "/api/forks/:owner/:name/yours", { params: fork, success: Schema.Boolean }),
     HttpApiEndpoint.get("settings", "/api/forks/:owner/:name/settings", { params: fork, success: Settings, error: [Problem, SignedOut] }),
     HttpApiEndpoint.put("saveSettings", "/api/forks/:owner/:name/settings", { params: fork, payload: Settings, success: Settings, error: [Problem, SignedOut] }),
-    HttpApiEndpoint.get("convexToken", "/api/auth/token", { success: Schema.Struct({ token: Schema.String }), error: SignedOut }),
+    HttpApiEndpoint.get("convexToken", "/api/auth/token", { query: { fresh: Schema.optional(Schema.String) }, success: Schema.Struct({ token: Schema.String }), error: SignedOut }),
     HttpApiEndpoint.post("addChange", "/api/forks/:owner/:name/changes", {
       params: fork,
       payload: Schema.Struct({ change: Schema.String }),

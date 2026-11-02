@@ -495,11 +495,11 @@ export const status = (owner: string, name: string) =>
     }
   })
 
-/* null when the viewer can't push, undefined when GitHub didn't say */
+/* undefined when GitHub didn't say */
 export const yours = (viewer: User, owner: string, name: string) =>
   GitHub.request<GitHubRepo & { id: number }>(viewer.token, "GET", `/repos/${owner}/${name}`).pipe(
-    Effect.map((seen): { id: number; name: string } | null | undefined => (seen.permissions?.push ? { id: seen.id, name: seen.full_name } : null)),
-    Effect.catchIf(GitHub.missing, () => Effect.succeed(null)),
+    Effect.map((seen): { id: number; name: string; push: boolean } | undefined => ({ id: seen.id, name: seen.full_name, push: !!seen.permissions?.push })),
+    Effect.catchIf(GitHub.missing, () => Effect.succeed({ id: 0, name: `${owner}/${name}`, push: false })),
     Effect.orElseSucceed(() => undefined),
   )
 
@@ -551,6 +551,7 @@ export const mine = (user: User) =>
   everyRepo(user.token).pipe(
     Effect.map(({ nodes, complete }) => ({
       complete,
+      denied: nodes.filter((repo) => !PUSH.includes(repo.viewerPermission ?? "")).map((repo) => ({ id: repo.databaseId, name: `${repo.owner.login}/${repo.name}` })),
       forks: nodes
         .filter((repo) => typeof repo.config?.text === "string" && PUSH.includes(repo.viewerPermission ?? ""))
         .map(

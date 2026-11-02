@@ -6,10 +6,10 @@ const url = import.meta.env.VITE_CONVEX_URL as string | undefined
 const convex = url ? new ConvexReactClient(url) : undefined
 
 /* Only a 401 means signed out: a throw would leave Convex's socket paused, and null for a hiccup would show "sign in again" to someone signed in */
-const token = async () => {
+const token = async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
   for (let attempt = 0; ; attempt++) {
     try {
-      const response = await fetch("/api/auth/token")
+      const response = await fetch(`/api/auth/token${forceRefreshToken ? "?fresh=1" : ""}`)
       if (response.status === 401 && attempt > 0) return null
       if (response.ok) return ((await response.json()) as { token: string }).token
     } catch {}

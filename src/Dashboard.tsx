@@ -48,6 +48,9 @@ const Forks = () => {
   return (
     <>
       {spend === null ? <SignInAgain back="/forks" many /> : null}
+      {spend && !spend.some((row) => mine.value.some((fork) => fork.repoId === row.repoId)) ? (
+        <p className="fine">Spend isn't available yet. Reload in a minute.</p>
+      ) : null}
       <p className="facts">
         <span>{spend?.some((row) => mine.value.some((fork) => fork.repoId === row.repoId)) ? money(total) : "–"} this month across {mine.value.length} fork{mine.value.length === 1 ? "" : "s"}, at API prices</span>
       </p>

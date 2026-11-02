@@ -1,6 +1,6 @@
 import { LIMITS, type Limits, type Settings } from "./api.ts"
 
-const CRON = /^(\s*-\s*cron:\s*)(["']?)([^"'\n#]+?)\2(\s*(?:#.*)?)$/m
+const CRON = /^([ \t]*-[ \t]*cron:[ \t]*)(["']?)([^"'\s#](?:[^"'\n#]*[^"'\s#])?)\2([ \t]*(?:#.*)?)$/m
 
 export const cronLine = (workflow: string | null) => workflow?.match(CRON)?.[3]?.trim() ?? null
 
