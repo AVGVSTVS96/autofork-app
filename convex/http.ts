@@ -139,6 +139,20 @@ http.route({
   }),
 })
 
+/* The site's settings save asks for this right after its commit, so the watch follows even if the push webhook's refresh failed */
+http.route({
+  path: "/refresh",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.AUTOFORK_SERVER_SECRET
+    if (!secret || !(await same(request.headers.get("authorization") ?? "", `Bearer ${secret}`))) return json({ error: "not allowed" }, 403)
+    const { name } = (await request.json()) ?? {}
+    if (typeof name !== "string") return json({ error: "need name" }, 400)
+    await ctx.scheduler.runAfter(0, internal.forks.refresh, { name })
+    return new Response(null, { status: 204 })
+  }),
+})
+
 http.route({
   path: "/access",
   method: "POST",

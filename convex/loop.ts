@@ -114,11 +114,6 @@ const read = async (asks: Map<number, Set<string>>) => {
     return Array.from({ length: Math.ceil(all.length / CHUNK) }, (_, at) => ({ installationId, keys: all.slice(at * CHUNK, (at + 1) * CHUNK) }))
   })
   const readChunk = async ({ installationId, keys }: { installationId: number; keys: string[] }): Promise<void> => {
-    /* Split and read again in halves, to find the one upstream that makes GitHub fail */
-    const split = async () => {
-      const half = Math.ceil(keys.length / 2)
-      if (keys.length > 1) await Promise.all([keys.slice(0, half), keys.slice(half)].map((part) => readChunk({ installationId, keys: part })))
-    }
     const query = `{ ${keys.map((key, index) => `w${index}: ${fields(key)}`).join("\n")} }`
     try {
       const { body } = await request<{ data?: Record<string, Found> | null; errors?: { path?: unknown[]; type?: string }[] }>(
@@ -131,13 +126,9 @@ const read = async (asks: Map<number, Set<string>>) => {
       const failed = new Set(
         (body.errors ?? []).filter((error) => error.path?.length === 1 || !["FORBIDDEN", "NOT_FOUND"].includes(error.type ?? "")).map((error) => error.path?.[0]),
       )
-      /* An error that names no upstream may have nulled any of them: a rate limit waits for the next tick, anything else is narrowed down */
-      const unplaced = (body.errors ?? []).filter((error) => !error.path?.length)
-      if (unplaced.length) {
-        console.warn(`installation ${installationId}: GitHub's answer for ${keys.length} upstreams had an error for none of them`)
-        if (!unplaced.some((error) => error.type === "RATE_LIMITED")) await split()
-        return
-      }
+      /* An error that names no upstream may have nulled any of them, so the chunk waits for the next tick */
+      if ((body.errors ?? []).some((error) => !error.path?.length))
+        return void console.warn(`installation ${installationId}: GitHub's answer for ${keys.length} upstreams had an error for none of them`)
       if (body.data)
         keys.forEach((key, index) => {
           if (!failed.has(`w${index}`)) found.set(`${installationId} ${key}`, body.data![`w${index}`] ?? null)
@@ -145,8 +136,6 @@ const read = async (asks: Map<number, Set<string>>) => {
     } catch (error) {
       if (error instanceof GitHubError && error.status === 401) dropToken(installationId)
       console.warn(`installation ${installationId} couldn't check ${keys.length} upstreams: ${error}`)
-      const slow = error instanceof GitHubError ? error.status === 502 || error.status === 504 : error instanceof Error && error.name === "TimeoutError"
-      if (slow) await split()
     }
   }
   await pool(jobs, readChunk)

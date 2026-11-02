@@ -14,7 +14,7 @@ The app behind [autofork.com](https://autofork.com): name an open source repo an
                     on your own plan, and rebuilds it on every release
 ```
 
-The sign-in goes straight into your fork as an Actions secret (`CLAUDE_CODE_OAUTH_TOKEN` or `CODEX_AUTH`). The app keeps no database and stores no tokens: your GitHub session is an encrypted cookie, and everything else is read from your fork. When Codex refreshes its sign-in during a run, the workflow sends it back with its GitHub OIDC token and the app writes it to the same secret.
+The sign-in goes straight into your fork as an Actions secret (`CLAUDE_CODE_OAUTH_TOKEN` or `CODEX_AUTH`). The app stores no tokens: your GitHub and WorkOS sessions are encrypted cookies, and settings are read from your fork. Its Convex database keeps linked forks, rebuild costs, and which signed-in people may see which fork's spend. When Codex refreshes its sign-in during a run, the workflow sends it back with its GitHub OIDC token and the app writes it to the same secret.
 
 The engine is [autofork](https://github.com/AVGVSTVS96/autofork), the GitHub Action every fork runs.
 

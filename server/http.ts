@@ -62,7 +62,10 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
     .handle("saveSettings", ({ params, payload }) =>
       github(
         Effect.gen(function* () {
-          return yield* Forks.saveSettings(yield* GitHub.signedIn, params.owner, params.name, payload)
+          const saved = yield* Forks.saveSettings(yield* GitHub.signedIn, params.owner, params.name, payload)
+          const { serverSecret } = yield* Env.Env
+          yield* convex("/refresh", { name: `${params.owner}/${params.name}` }, serverSecret)
+          return saved
         }),
       ),
     )

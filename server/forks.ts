@@ -616,6 +616,7 @@ export const saveSettings = (user: User, owner: string, name: string, wanted: Se
     const { rebuilds, month, rebuild } = wanted.limits
     if (newLimits && (![rebuilds, month, rebuild].every(fine) || !Number.isInteger(rebuilds))) return yield* new Problem({ message: "Limits are whole rebuilds and dollar amounts." })
     if (newLimits && rebuilds > 200) return yield* new Problem({ message: "autofork records up to 200 rebuilds a fork a month." })
+    if (newLimits && rebuild === 0) return yield* new Problem({ message: "A rebuild's cap has to be more than $0. To stop rebuilds, set rebuilds to 0." })
     if (newLimits && rebuild > month) return yield* new Problem({ message: "One rebuild's cap can't be more than the month's, or nothing would ever start." })
     const files: GitHub.File[] = []
     const unchanged = now.follow === wanted.follow.trim() && !newLimits
