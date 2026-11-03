@@ -2,6 +2,7 @@ import { useState } from "react"
 import facts from "./facts.json"
 import { repoIcon } from "./known.ts"
 
+const [t3fork] = facts.forks
 const install = `npx skills add ${facts.owner}/autofork`
 
 const Minimize = () => (
@@ -141,7 +142,7 @@ export const MineToday = ({ onPick }: { onPick: (fork: Mine, keyboard: boolean) 
   <section className="mine-today">
     <h2 data-node>My forks, today.</h2>
     <p className="line">
-      My T3 Code fork took {facts.t3code.commitsTaken.toLocaleString("en-US")} commits from T3 Code in its first four weeks, and I never rebased it. My changes broke {facts.t3code.rebuilds} times along the way, and each time the agent rebuilt them.
+      My T3 Code fork took {t3fork!.upstreamCommitsAbsorbed} commits from T3 Code in its first two days, and I never rebased it. One change broke on day one and the agent rebuilt it.
     </p>
     <div className="t3" data-t3 />
     <ul className="asks">
