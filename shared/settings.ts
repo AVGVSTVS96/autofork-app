@@ -28,6 +28,14 @@ export const parses = (config: string) => {
   }
 }
 
+export const githubRepo = (upstream: string) =>
+  upstream.trim().match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1] ?? null
+
+export const upstreamOf = (config: string | null) => {
+  const { upstream } = parse(config)
+  return typeof upstream === "string" ? githubRepo(upstream) : null
+}
+
 const usd = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback)
 const whole = (value: unknown, fallback: number) => (Number.isInteger(value) && (value as number) >= 0 ? (value as number) : fallback)
 

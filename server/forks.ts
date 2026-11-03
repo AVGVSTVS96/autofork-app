@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
-import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
-import { cronLines, parses, readableFollow, readableLimits, readSettings, withCron, withSettings } from "../shared/settings.ts"
+import { type Agent, type Change, EVERY, type ForkState, LIMITS, type MyFork, NotFound, Problem, type Repo, type Run, type Settings, split, squash } from "../shared/api.ts"
+import { cronLines, parses, readableFollow, readableLimits, readSettings, upstreamOf, withCron, withSettings } from "../shared/settings.ts"
 import { Env } from "./env.ts"
 import * as GitHub from "./github.ts"
 import type { User } from "./session.ts"
@@ -356,11 +356,18 @@ export const addChange = (user: User, owner: string, name: string, change: strin
   })
 
 type Job = { id: number; status: string; conclusion: string | null; started_at: string; completed_at: string | null; steps?: { name: string; status: string; conclusion: string | null }[] }
-type WorkflowRun = { id: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string; head_sha: string; head_branch: string }
+type WorkflowRun = { id: number; run_attempt: number; html_url: string; status: string; conclusion: string | null; run_started_at: string; updated_at: string; head_sha: string; head_branch: string }
 
 const SYNC = "autofork: sync "
 const SUBJECT = /^autofork: sync \S+ to [0-9a-f]{12}(?:\n|$)/
 const MOVED = /^\S+ changed while this ran, so the next run syncs it instead$/
+const SKIPPED = /^autofork: already failed on upstream /
+
+/* A reason that starts with one of the fork's patch ids keeps the id as it's written */
+const sentence = (line: string, describe: (id: string) => string) => {
+  const first = line.match(/^[\w.-]+/)?.[0] ?? ""
+  return describe(first) === first ? line.replace(/^[a-z]/, (letter) => letter.toUpperCase()) : line
+}
 
 const synced = (message: string, name: (id: string) => string) =>
   message.split("\n").flatMap((line): string[] => {
@@ -372,48 +379,74 @@ const synced = (message: string, name: (id: string) => string) =>
     return []
   })
 
-const unsynced = (raw: string): Pick<Run, "log" | "moved"> => {
+type Story = Pick<Run, "log" | "moved" | "change"> & { skipped?: boolean }
+
+const unsynced = (raw: string, describe: (id: string) => string): Story => {
   const lines = raw.split("\n").map((line) => line.replace(/^\S+Z /, "").replace(/\x1b\[[0-9;]*m/g, "").trim())
   const moved = lines.find((line) => MOVED.test(line))
-  if (moved) return { log: [moved], moved: true }
+  if (moved) return { log: [moved], moved: true, change: null }
   const reason = lines.findLast((line) => line.startsWith("autofork: ") && !line.startsWith(SYNC))
-  return { log: reason ? [reason.slice("autofork: ".length)] : [], moved: false }
+  return { log: reason ? [sentence(reason.slice("autofork: ".length), describe)] : [], moved: false, change: null, skipped: !!reason && SKIPPED.test(reason) }
 }
 
-const told = new Map<number, Pick<Run, "log" | "moved">>()
+const told = new Map<number, Story>()
 
 /* action.sh pushes the sync commit, while the job is going, on top of the commit it checked out; a job that pushed nothing says why in its log */
 const outcome = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun, job: Job, describe: (id: string) => string) => {
   const hit = told.get(job.id)
   if (hit) return Effect.succeed(hit)
   const query = new URLSearchParams({ sha: run.head_branch, since: job.started_at, until: job.completed_at!, per_page: "20" })
-  return GitHub.request<{ parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
+  return GitHub.request<{ html_url: string; parents: { sha: string }[]; commit: { message: string } }[]>(token, "GET", `/repos/${owner}/${name}/commits?${query}`).pipe(
     Effect.map((commits) => commits.find((each) => each.parents[0]?.sha === run.head_sha && SUBJECT.test(each.commit.message))),
     Effect.flatMap((sync) =>
       sync
-        ? Effect.succeed({ log: [...new Set(synced(sync.commit.message, describe))], moved: false })
-        : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(Effect.map(unsynced)),
+        ? Effect.succeed<Story>({ log: [...new Set(synced(sync.commit.message, describe))], moved: false, change: sync.html_url })
+        : GitHub.text(token, `/repos/${owner}/${name}/actions/jobs/${job.id}/logs`).pipe(Effect.map((raw) => unsynced(raw, describe))),
     ),
     Effect.tap((story) => Effect.sync(() => keep(told, job.id, story, 500))),
   )
 }
 
+const runs = (token: GitHub.Token, owner: string, name: string, query: string) =>
+  GitHub.request<{ workflow_runs: WorkflowRun[] }>(token, "GET", `/repos/${owner}/${name}/actions/workflows/autofork.yml/runs?exclude_pull_requests=true&${query}`).pipe(
+    Effect.map(({ workflow_runs }) => workflow_runs),
+  )
+
+const jobOf = (token: GitHub.Token, owner: string, name: string, run: WorkflowRun) =>
+  GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`).pipe(Effect.map(({ jobs }) => jobs[0]))
+
+const FAILED = ["failure", "cancelled", "timed_out"]
+
+const finished = new Map<string, Job | undefined>()
+
+/* action.yml saves the key a skip checks only when its own step fails or is cancelled, and a skip runs on the same commit, so the failure it means is the newest run on that commit whose autofork step ended that way. Runs GitHub cancels while they wait for a turn never reach that step, and a finished attempt's job never changes */
+const failedBefore = (token: GitHub.Token, owner: string, name: string, skip: WorkflowRun) =>
+  Effect.gen(function* () {
+    const found = yield* Effect.forEach(FAILED, (status) => runs(token, owner, name, `head_sha=${skip.head_sha}&status=${status}&per_page=20`), { concurrency: 3 })
+    const failed = found.flat().sort((a, b) => b.run_started_at.localeCompare(a.run_started_at))
+    for (let at = 0; at < failed.length; at += 10) {
+      const chunk = failed.slice(at, at + 10)
+      const jobs = yield* Effect.forEach(chunk, (run) => bySha(finished, `${run.id}-${run.run_attempt}`, jobOf(token, owner, name, run)), { concurrency: 10 })
+      const hit = jobs.findIndex((job) => job?.steps?.some((step) => /\/(?:autofork|autopatch)@/.test(step.name) && FAILED.includes(step.conclusion ?? "")))
+      if (hit >= 0) return { run: chunk[hit]!, job: jobs[hit] }
+    }
+    return null
+  })
+
+/* A run that skips because nothing changed since a failure ends green, so the page shows that failure instead */
 const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (id: string) => string) =>
   Effect.gen(function* () {
-    const { workflow_runs } = yield* GitHub.request<{ workflow_runs: WorkflowRun[] }>(
-      token,
-      "GET",
-      `/repos/${owner}/${name}/actions/workflows/autofork.yml/runs?per_page=1&exclude_pull_requests=true`,
-    )
-    const run = workflow_runs[0]
-    if (!run) return null
-    const { jobs } = yield* GitHub.request<{ jobs: Job[] }>(token, "GET", `/repos/${owner}/${name}/actions/runs/${run.id}/jobs`)
-    const job = jobs[0]
-    const untold = { log: [], moved: false }
-    const log =
-      job?.completed_at
-        ? yield* outcome(token, owner, name, run, job, describe).pipe(Effect.orElseSucceed(() => untold))
-        : untold
+    const [newest] = yield* runs(token, owner, name, "per_page=1")
+    if (!newest) return null
+    const told = (run: WorkflowRun, job: Job | undefined) => {
+      const untold: Story = { log: [], moved: false, change: null }
+      return job?.completed_at ? outcome(token, owner, name, run, job, describe).pipe(Effect.orElseSucceed(() => untold)) : Effect.succeed(untold)
+    }
+    const latest = yield* jobOf(token, owner, name, newest)
+    const latestStory = yield* told(newest, latest)
+    const failed = latestStory.skipped ? yield* failedBefore(token, owner, name, newest).pipe(Effect.orElseSucceed(() => null)) : null
+    const { run, job } = failed ?? { run: newest, job: latest }
+    const story = failed ? yield* told(run, job) : latestStory
     return {
       url: run.html_url,
       status: run.status,
@@ -421,7 +454,10 @@ const latestRun = (token: GitHub.Token, owner: string, name: string, describe: (
       startedAt: run.run_started_at,
       updatedAt: run.updated_at,
       steps: (job?.steps ?? []).map(({ name, status, conclusion }) => ({ name, status, conclusion })),
-      ...log,
+      log: story.log,
+      moved: story.moved,
+      change: story.change,
+      latestAt: newest.run_started_at,
     } satisfies Run
   }).pipe(Effect.catchIf(GitHub.missing, () => Effect.succeed(null)))
 
@@ -452,15 +488,24 @@ const blob = (token: GitHub.Token, owner: string, name: string, sha: string) =>
     ),
   )
 
+/* A repo the site set up that isn't a GitHub fork names itself as upstream, and a config that can't be read falls back to GitHub's parent */
+const upstreamFor = (config: string | null, self: string, parent: string | undefined) => {
+  const named = upstreamOf(config) ?? parent ?? null
+  return named?.toLowerCase() === self.toLowerCase() ? null : named
+}
+
 export const status = (owner: string, name: string) =>
   Effect.gen(function* () {
     const token = yield* GitHub.repoToken(owner, name).pipe(Effect.catch(() => GitHub.appToken))
     const repo = yield* GitHub.request<GitHubRepo>(token, "GET", `/repos/${owner}/${name}`).pipe(
-      Effect.catchIf(GitHub.missing, problem(`There's no fork at github.com/${owner}/${name}.`)),
+      Effect.catchIf(GitHub.missing, () => Effect.fail(new NotFound({ from: null }))),
     )
     /* This page is public and cached, and the app's token can read private repos, so a private fork reads as missing */
-    if (repo.private) return yield* new Problem({ message: `There's no fork at github.com/${owner}/${name}.` })
+    if (repo.private) return yield* new NotFound({ from: null })
     const control = yield* listDir(token, owner, name, ".autofork")
+    const config = control.find((entry) => entry.name === "config.json" && entry.type === "file")
+    if (!config) return yield* new NotFound({ from: repo.parent?.full_name ?? repo.full_name })
+    const upstream = upstreamFor(yield* blob(token, owner, name, config.sha).pipe(Effect.orElseSucceed(() => null)), repo.full_name, repo.parent?.full_name)
     const found = yield* Effect.forEach(
       control.filter((entry) => entry.type === "dir"),
       (dir) =>
@@ -500,7 +545,7 @@ export const status = (owner: string, name: string) =>
     return {
       owner: repo.owner.login,
       name: repo.name,
-      upstream: repo.parent?.full_name ?? null,
+      upstream,
       agent,
       changes,
       note,
@@ -521,6 +566,7 @@ type Blob = { text: string } | null
 type Node = {
   name: string
   databaseId: number
+  createdAt: string
   viewerPermission: string | null
   owner: { login: string }
   parent: { nameWithOwner: string } | null
@@ -528,63 +574,101 @@ type Node = {
   workflow: Blob
 }
 
-/* Reading each repo's two files is most of the cost, so only forks are listed, 50 a page, to stay well inside GitHub's 10-second GraphQL limit */
-const MINE = `query($after: String) { viewer { repositories(first: 50, after: $after, isFork: true, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: CREATED_AT, direction: DESC }) {
-  nodes { name databaseId viewerPermission owner { login } parent { nameWithOwner }
+const NODE = `name databaseId createdAt viewerPermission owner { login } parent { nameWithOwner }
     config: object(expression: "HEAD:.autofork/config.json") { ... on Blob { text } }
-    workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } } }
+    workflow: object(expression: "HEAD:.github/workflows/autofork.yml") { ... on Blob { text } }`
+
+/* Reading each repo's two files is most of the cost, so forks are listed 50 a page, to stay well inside GitHub's 10-second GraphQL limit */
+const FORKS = `query($after: String) { viewer { repositories(first: 50, after: $after, isFork: true, affiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR], orderBy: { field: CREATED_AT, direction: DESC }) {
+  nodes { ${NODE} }
   pageInfo { hasNextPage endCursor }
 } } }`
 
-type Page = {
-  data?: { viewer: { repositories: { nodes: (Node | null)[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } | null
+/* An autofork that isn't a GitHub fork, made with `autofork init`, is rare: the viewer's own other repos are listed by name, then read 10 to a query, side by side */
+const OTHERS = `query($after: String) { viewer { repositories(first: 100, after: $after, isFork: false, affiliations: [OWNER], ownerAffiliations: [OWNER]) {
+  nodes { name owner { login } }
+  pageInfo { hasNextPage endCursor }
+} } }`
+
+type Named = { name: string; owner: { login: string } }
+
+type Page<A> = {
+  data?: { viewer: { repositories: { nodes: (A | null)[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } } | null
   errors?: unknown[]
 }
 
 const PAGES = 20
 
-const everyRepo = (token: string) =>
+const everyRepo = <A>(token: string, query: string) =>
   Effect.gen(function* () {
-    const nodes: Node[] = []
+    const nodes: A[] = []
     let after: string | null = null
     let failed = false
     for (let page = 0; page < PAGES; page++) {
       /* A later page failing still leaves the pages read so far, marked incomplete */
-      const { data, errors }: Page = yield* GitHub.request<Page>(token, "POST", "/graphql", { query: MINE, variables: { after } }).pipe(
+      const { data, errors }: Page<A> = yield* GitHub.request<Page<A>>(token, "POST", "/graphql", { query, variables: { after } }).pipe(
         Effect.catchIf(
           () => page > 0,
-          () => Effect.succeed<Page>({}),
+          () => Effect.succeed<Page<A>>({}),
         ),
       )
       if (!data && page > 0) return { nodes, complete: false }
       if (!data) return yield* new Problem({ message: `GitHub couldn't list your repositories${errors ? "" : " right now"}. Try again.` })
       failed ||= !!errors
-      nodes.push(...data.viewer.repositories.nodes.filter((node): node is Node => node !== null))
+      nodes.push(...data.viewer.repositories.nodes.filter((node): node is A => node !== null))
       if (!data.viewer.repositories.pageInfo.hasNextPage) return { nodes, complete: !failed }
       after = data.viewer.repositories.pageInfo.endCursor
     }
     return { nodes, complete: false }
   })
 
+const CHUNK = 10
+
+const readRepos = (token: string, repos: Named[]) =>
+  Effect.forEach(
+    Array.from({ length: Math.ceil(repos.length / CHUNK) }, (_, at) => repos.slice(at * CHUNK, at * CHUNK + CHUNK)),
+    (chunk) =>
+      GitHub.request<{ data?: Record<string, Node | null> | null; errors?: { type?: string; path?: unknown[] }[] }>(token, "POST", "/graphql", {
+        query: `{ ${chunk.map((repo, index) => `r${index}: repository(owner: ${JSON.stringify(repo.owner.login)}, name: ${JSON.stringify(repo.name)}) { ${NODE} }`).join("\n")} }`,
+      }).pipe(
+        /* A repo deleted or blocked since it was listed can't be the viewer's autofork, so it doesn't make the read incomplete */
+        Effect.map(({ data, errors = [] }) => ({
+          nodes: Object.values(data ?? {}).filter((node): node is Node => node !== null),
+          complete: !!data && errors.every((error) => error.path?.length === 1 && (error.type === "NOT_FOUND" || error.type === "FORBIDDEN")),
+        })),
+        Effect.orElseSucceed(() => ({ nodes: [] as Node[], complete: false })),
+      ),
+    { concurrency: 20 },
+  ).pipe(Effect.map((chunks) => ({ nodes: chunks.flatMap((chunk) => chunk.nodes), complete: chunks.every((chunk) => chunk.complete) })))
+
+const others = (token: string) =>
+  everyRepo<Named>(token, OTHERS).pipe(
+    Effect.flatMap(({ nodes, complete }) => Effect.map(readRepos(token, nodes), (read) => ({ nodes: read.nodes, complete: complete && read.complete }))),
+    Effect.orElseSucceed(() => ({ nodes: [] as Node[], complete: false })),
+  )
+
 const PUSH = ["ADMIN", "MAINTAIN", "WRITE"]
 
 export const mine = (user: User) =>
-  everyRepo(user.token).pipe(
-    Effect.map(({ nodes, complete }) => ({
-      complete,
-      denied: nodes.filter((repo) => !PUSH.includes(repo.viewerPermission ?? "")).map((repo) => ({ id: repo.databaseId, name: `${repo.owner.login}/${repo.name}` })),
-      forks: nodes
-        .filter((repo) => typeof repo.config?.text === "string" && PUSH.includes(repo.viewerPermission ?? ""))
-        .map(
-          (repo): MyFork => ({
-            owner: repo.owner.login,
-            name: repo.name,
-            upstream: repo.parent?.nameWithOwner ?? null,
-            repoId: repo.databaseId,
-            settings: readSettings(repo.config?.text ?? null, repo.workflow?.text ?? null),
-          }),
-        ),
-    })),
+  Effect.all([everyRepo<Node>(user.token, FORKS), others(user.token)], { concurrency: 2 }).pipe(
+    Effect.map(([forks, rest]) => {
+      const nodes = [...forks.nodes, ...rest.nodes].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      return {
+        complete: forks.complete && rest.complete,
+        denied: nodes.filter((repo) => !PUSH.includes(repo.viewerPermission ?? "")).map((repo) => ({ id: repo.databaseId, name: `${repo.owner.login}/${repo.name}` })),
+        forks: nodes
+          .filter((repo) => typeof repo.config?.text === "string" && PUSH.includes(repo.viewerPermission ?? ""))
+          .map(
+            (repo): MyFork => ({
+              owner: repo.owner.login,
+              name: repo.name,
+              upstream: upstreamFor(repo.config!.text, `${repo.owner.login}/${repo.name}`, repo.parent?.nameWithOwner),
+              repoId: repo.databaseId,
+              settings: readSettings(repo.config!.text, repo.workflow?.text ?? null),
+            }),
+          ),
+      }
+    }),
   )
 
 const contents = (token: string, owner: string, name: string, path: string, ref: string) =>

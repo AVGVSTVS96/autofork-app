@@ -1,7 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { useEffect, useMemo, useState } from "react"
-import { EVERY, type Settings } from "../shared/api.ts"
+import { EVERY, type Fork, type Settings } from "../shared/api.ts"
 import * as client from "./client.ts"
 import { money, rebuilding, type Spend } from "./live.tsx"
 import { Item } from "./ui.tsx"
@@ -25,7 +25,7 @@ export const Meter = ({ spent, cap }: { spent: number; cap: number }) => (
   </span>
 )
 
-export const Timer = ({ spend, owner, name }: { spend: Spend | undefined; owner: string; name: string }) =>
+const Timer = ({ spend, owner, name }: { spend: Spend | undefined; owner: string; name: string }) =>
   spend?.linked ? (
     <p className="fine timer">On time: autofork starts a run within a minute of upstream changing.</p>
   ) : (
@@ -35,7 +35,7 @@ export const Timer = ({ spend, owner, name }: { spend: Spend | undefined; owner:
     </p>
   )
 
-export const SpendCard = ({ spend, settings, owner, name }: { spend: Spend | undefined; settings: Settings | null; owner: string; name: string }) => {
+export const SpendCard = ({ spend, settings, fork }: { spend: Spend | undefined; settings: Settings | null; fork: Fork }) => {
   const limits = settings?.limits
   return (
     <section className="card spend">
@@ -73,7 +73,7 @@ export const SpendCard = ({ spend, settings, owner, name }: { spend: Spend | und
           <Item state="wait">No rebuilds this month. Syncs that git finishes on its own cost nothing.</Item>
         )}
       </ul>
-      <Timer spend={spend} owner={owner} name={name} />
+      <Timer spend={spend} owner={fork.owner} name={fork.name} />
     </section>
   )
 }
@@ -82,7 +82,8 @@ const PRESETS = Object.entries(EVERY) as [keyof typeof EVERY, string][]
 
 const LABEL: Record<keyof typeof EVERY, string> = { "5m": "5 min", "15m": "15 min", "1h": "hour", "1d": "day" }
 
-export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: string; onSaved: (settings: Settings) => void }) => {
+export const SettingsCard = ({ fork, onSaved }: { fork: Fork; onSaved: (settings: Settings) => void }) => {
+  const { owner, name } = fork
   const atom = useMemo(() => client.settings(owner, name), [owner, name])
   const loaded = useAtomValue(atom)
   const save = useAtomSet(client.saveSettings, { mode: "promiseExit" })
@@ -154,17 +155,8 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
         </label>
       </div>
       <p className="fine">
-        A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices. On a Claude plan with a 5-hour limit, runs
-        through <code>claude -p</code> like autofork's use it about 1.6x to 1.8x faster per token than interactive Claude Code, and weekly limits count them the
-        same (
-        <a href="https://github.com/pingdotgg/t3code/issues/24649" target="_blank" rel="noreferrer">
-          T3 Code's A/B
-        </a>
-        ,{" "}
-        <a href="https://github.com/anthropics/claude-code/issues/97074" target="_blank" rel="noreferrer">
-          claude-code#97074
-        </a>
-        ).
+        A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices.
+        {fork.agent === "claude" ? " On a Claude plan, runs count the same as using Claude Code yourself." : null}
       </p>
       <div className="save">
         <button type="submit" className="btn primary" disabled={state.busy}>

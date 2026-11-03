@@ -84,12 +84,9 @@ export const LinkRoute = () => {
             </p>
             {state && "error" in state ? <p className="bad">{state.error}</p> : null}
             {state && "why" in state && state.why && WHY[state.why] ? <p className="bad">{WHY[state.why]}</p> : null}
-            {state && "linked" in state && !state.linked && !("why" in state) && !("checked" in state) ? (
-              <p className="fine">If autofork is already installed on {name}, check the two files below.</p>
-            ) : null}
             {error ? <p className="bad">{error}</p> : null}
             {stopped ? <p className="fine">Stopped checking after 10 minutes. Reload the page to check again.</p> : null}
-            <p className="fine">Push your fork's .autofork/config.json and .github/workflows/autofork.yml first. To unlink, remove the app from the repo on GitHub.</p>
+            <p className="fine">To unlink, remove the app from the repo on GitHub.</p>
           </>
         )}
       </main>

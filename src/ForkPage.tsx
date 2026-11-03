@@ -1,5 +1,5 @@
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
-import { getRouteApi } from "@tanstack/react-router"
+import { getRouteApi, Link } from "@tanstack/react-router"
 import * as Option from "effect/Option"
 import * as AsyncResult from "effect/reactivity/AsyncResult"
 import { Component, lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react"
@@ -21,7 +21,7 @@ class Contained extends Component<{ children: ReactNode }, { failed: boolean }> 
 const Yours = lazy(() =>
   import("./Yours.tsx").then(
     (module) => ({ default: module.Yours }),
-    () => ({ default: (_: { owner: string; name: string }) => UNAVAILABLE }),
+    () => ({ default: (_: { fork: Fork }) => UNAVAILABLE }),
   ),
 )
 
@@ -37,9 +37,11 @@ const ForkPage = ({ owner, name, since, error }: { owner: string; name: string; 
   const result = useAtomValue(atom)
   const refresh = useAtomRefresh(atom)
   const mine = useAtomValue(useMemo(() => client.yours(owner, name), [owner, name]))
-  const fork = Option.getOrNull(AsyncResult.value(result))
-  const run = fork?.run && (!since || fork.run.startedAt >= since) ? fork.run : null
-  const live = (!!since && !run) || (!!run && run.status !== "completed")
+  const me = useAtomValue(client.me)
+  const missing = AsyncResult.isFailure(result) ? client.notFound(result.cause) : null
+  const fork = missing ? null : Option.getOrNull(AsyncResult.value(result))
+  const run = fork?.run && (!since || fork.run.latestAt >= since) ? fork.run : null
+  const live = !missing && ((!!since && !run) || (!!run && run.status !== "completed"))
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -72,9 +74,11 @@ const ForkPage = ({ owner, name, since, error }: { owner: string; name: string; 
       </Nav>
       <main className="fork">
         {error ? <p className="bad">{error}</p> : null}
-        {fork ? (
+        {fork && !AsyncResult.isInitial(mine) ? (
           <Body fork={fork} run={since && !run ? null : fork.run} waiting={!!since && !run} yours={AsyncResult.isSuccess(mine) && mine.value} />
-        ) : AsyncResult.isFailure(result) ? (
+        ) : missing && !AsyncResult.isInitial(me) ? (
+          <Missing owner={owner} name={name} from={missing.from} viewer={AsyncResult.isSuccess(me) ? (me.value?.login ?? null) : null} />
+        ) : AsyncResult.isFailure(result) && !missing ? (
           <Retry className="note" message={client.failure(result.cause)} onRetry={refresh} />
         ) : (
           <p className="note wait">Loading {owner}/{name}…</p>
@@ -84,15 +88,41 @@ const ForkPage = ({ owner, name, since, error }: { owner: string; name: string; 
   )
 }
 
+/* GitHub can't fork a repo into the account that owns it, so a viewer who owns the repo to fork gets no button */
+const Missing = ({ owner, name, from, viewer }: { owner: string; name: string; from: string | null; viewer: string | null }) => (
+  <>
+    <header className="fork-head">
+      <h1>{from ? "Not an autofork" : "Nothing here"}</h1>
+      <p className="facts">
+        <span>
+          <ForkIcon /> {from ? `${owner}/${name}` : `github.com/${owner}/${name} isn't a public repo`}
+        </span>
+      </p>
+    </header>
+    <p>
+      {from && from.split("/")[0]!.toLowerCase() !== viewer?.toLowerCase() ? (
+        <Link className="btn primary" to="/" search={{ q: from }}>
+          Fork {from.split("/")[1]} with autofork
+        </Link>
+      ) : (
+        <Link className="btn primary" to="/" search={{}}>
+          Back home
+        </Link>
+      )}
+    </p>
+  </>
+)
+
 const Ticks = ({ text }: { text: string }) => text.split("`").map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))
 
 const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; waiting: boolean; yours: boolean }) => {
   const app = fork.upstream?.split("/")[1] ?? fork.name
+  const plan = fork.agent === "claude" ? "Claude" : "ChatGPT"
   return (
     <>
       <header className="fork-head">
         <h1>
-          Your <span className="you">{app}</span>
+          {yours ? "Your" : `${fork.owner}'s`} <span className="you">{fork.name}</span>
         </h1>
         <p className="facts">
           <span>
@@ -108,7 +138,7 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
           ) : null}
           {fork.agent ? (
             <span>
-              {fork.agent === "claude" ? <ClaudeIcon /> : <OpenAIIcon />} Runs on your {fork.agent === "claude" ? "Claude" : "ChatGPT"} plan
+              {fork.agent === "claude" ? <ClaudeIcon /> : <OpenAIIcon />} Runs on {yours ? `your ${plan} plan` : plan}
             </span>
           ) : null}
         </p>
@@ -124,7 +154,7 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
                 end="paused"
                 detail={
                   <p className="why">
-                    {change.upstream ?? `${app} does this now.`} autofork stopped applying it. Keep theirs, or ask for a different change.
+                    {change.upstream ?? `${app} does this now.`} autofork stopped applying it.{yours ? " Keep theirs, or ask for a different change." : null}
                     {change.issue ? (
                       <>
                         {" "}
@@ -148,7 +178,7 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
           <Item state="wait">No changes yet.</Item>
         )}
       </ul>
-      {fork.note ? (
+      {fork.note && yours ? (
         <p className="fine aside">
           Your README gets a line saying this fork updates itself with autofork. To drop it, delete the line, once it's there, and{" "}
           <a href={`https://github.com/${fork.owner}/${fork.name}/tree/HEAD/.autofork/fork-readme`} target="_blank" rel="noreferrer">
@@ -158,13 +188,13 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
         </p>
       ) : null}
 
-      <Progress run={run} waiting={waiting} fork={fork} />
+      <Progress run={run} waiting={waiting} fork={fork} yours={yours} />
       {yours ? (
         <>
           <More owner={fork.owner} name={fork.name} />
           <Contained>
             <Suspense>
-              <Yours owner={fork.owner} name={fork.name} />
+              <Yours fork={fork} />
             </Suspense>
           </Contained>
         </>
@@ -173,14 +203,21 @@ const Body = ({ fork, run, waiting, yours }: { fork: Fork; run: Run | null; wait
   )
 }
 
-const LABELS: [RegExp, string][] = [
-  [/^Set up job$/, "Starting a computer"],
-  [/checkout/, "Getting the code"],
-  [/setup|action-setup/, "Installing tools"],
-  [/autofork|autopatch/, "The agent builds your change"],
-]
-
-const label = (step: string) => LABELS.find(([pattern]) => pattern.test(step))?.[1]
+/* A run that pushed says in its log whether it built something; one that failed or is still going without pushing was building when a change has no patch yet */
+const label = (step: string, fork: Fork, run: Run, yours: boolean) =>
+  /^Set up job$/.test(step)
+    ? "Starting a computer"
+    : /checkout/.test(step)
+      ? "Getting the code"
+      : /setup|action-setup/.test(step)
+        ? "Installing tools"
+        : /autofork|autopatch/.test(step)
+          ? (run.change
+              ? run.log.some((line) => /^(?:Built|Rebuilt) "/.test(line))
+              : run.conclusion !== "success" && fork.changes.some((change) => change.state === "building"))
+            ? `The agent builds ${yours ? "your" : "the"} change`
+            : fork.upstream ? `Syncing with ${fork.upstream}` : "Syncing"
+          : undefined
 
 const elapsed = (from: string, to: number) => {
   const seconds = Math.max(0, Math.round((to - Date.parse(from)) / 1000))
@@ -197,21 +234,21 @@ const useNow = (on: boolean) => {
   return now
 }
 
-const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; fork: Fork }) => {
+const Progress = ({ run, waiting, fork, yours }: { run: Run | null; waiting: boolean; fork: Fork; yours: boolean }) => {
   const live = waiting || (run !== null && run.status !== "completed")
   const now = useNow(live)
   if (waiting) {
     return (
       <section className="card run">
         <ul className="list">
-          <Item state="now">Starting the build in your GitHub Actions…</Item>
+          <Item state="now">Starting the build in {yours ? "your " : ""}GitHub Actions…</Item>
         </ul>
       </section>
     )
   }
   if (!run) return null
   const steps = run.steps.flatMap((step) => {
-    const text = label(step.name)
+    const text = label(step.name, fork, run, yours)
     return text && !step.name.startsWith("Post ") ? [{ ...step, text }] : []
   })
   const unique = steps.filter((step, index) => steps.findIndex((other) => other.text === step.text) === index || step.status !== "completed")
@@ -250,8 +287,8 @@ const Progress = ({ run, waiting, fork }: { run: Run | null; waiting: boolean; f
         <a href={run.url} target="_blank" rel="noreferrer">
           See the run on GitHub
         </a>
-        {done && good && !run.moved && fork.upstream ? (
-          <a href={`https://github.com/${fork.owner}/${fork.name}/commits`} target="_blank" rel="noreferrer">
+        {done && run.change ? (
+          <a href={run.change} target="_blank" rel="noreferrer">
             See the change
           </a>
         ) : null}

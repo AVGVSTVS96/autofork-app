@@ -2,18 +2,12 @@ import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { ActionCtx, MutationCtx } from "./_generated/server"
 import { internalAction, internalMutation, internalQuery } from "./_generated/server"
-import { cronLine } from "../shared/settings"
+import { cronLine, githubRepo } from "../shared/settings"
 import { dropToken, file, GitHubError, installationToken, repoInstallation, request } from "./github"
-
-const repoOf = (upstream: string) =>
-  upstream
-    .trim()
-    .match(/^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[/:])?([\w-]+\/[\w.-]+?)(?:\.git)?(?:\/.*)?$/i)?.[1]
-    ?.toLowerCase() ?? null
 
 /* `green: false` follows a branch's tip whatever its checks say */
 export const watchFor = (upstream: string, given: string | undefined, green = true) => {
-  const repo = repoOf(upstream)
+  const repo = githubRepo(upstream)?.toLowerCase()
   const follow = given?.trim()
   if (!repo) return null
   if (follow?.includes("*")) return `${repo} channel`
