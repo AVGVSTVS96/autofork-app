@@ -86,7 +86,7 @@ export const resolve = (q: string, token: GitHub.Token) =>
   })
 
 
-const API = "https://autofork-app.vercel.app/api"
+const API = "https://autofork.com/api"
 export const CODEX_AUTH_URL = `${API}/chatgpt/auth`
 
 const workflow = (branch: string) =>
