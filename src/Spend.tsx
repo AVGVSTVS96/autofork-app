@@ -154,8 +154,8 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
         </label>
       </div>
       <p className="fine">
-        A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices. On a Claude plan, runs like
-        autofork's use the 5-hour limit about 1.6x to 1.8x faster per token than interactive Claude Code, while weekly limits count them the same{" "}
+        A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices. On a Claude plan with a 5-hour limit,
+        runs like autofork's use it about 1.6x to 1.8x faster per token than interactive Claude Code, while weekly limits count them the same{" "}
         <a href="https://github.com/anthropics/claude-code/issues/97074" target="_blank" rel="noreferrer">
           (Anthropic's open issue)
         </a>
