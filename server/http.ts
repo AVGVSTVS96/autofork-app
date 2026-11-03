@@ -129,7 +129,7 @@ const AppLive = HttpApiBuilder.group(Api, "app", (handlers) =>
 )
 
 const origin = (request: HttpServerRequest.HttpServerRequest) => {
-  const host = request.headers["x-forwarded-host"] ?? request.headers.host ?? "autofork-app.vercel.app"
+  const host = request.headers["x-forwarded-host"] ?? request.headers.host ?? "autofork.com"
   const proto = request.headers["x-forwarded-proto"] ?? (host.startsWith("localhost") ? "http" : "https")
   return `${proto}://${host}`
 }

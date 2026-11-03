@@ -28,6 +28,7 @@ jobs:
         run: npx -y @anthropic-ai/claude-code -p --dangerously-skip-permissions "Do what .github/examples/PATCH.md asks."
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_ENTRYPOINT: autofork
       - if: steps.due.outputs.due == 'true'
         id: check
         run: bun .github/examples/refresh.ts check

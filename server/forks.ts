@@ -21,7 +21,9 @@ type GitHubRepo = {
   permissions?: { admin: boolean; push: boolean }
 }
 
-const toRepo = (repo: GitHubRepo): Repo => ({
+type Listed = Pick<GitHubRepo, "name" | "owner" | "description" | "stargazers_count">
+
+const toRepo = (repo: Listed): Repo => ({
   owner: repo.owner.login,
   name: repo.name,
   description: repo.description,
@@ -41,18 +43,27 @@ const keep = <K, V>(cache: Map<K, V>, key: K, value: V, size = 2000) => {
 
 const searched = new Map<string, { repos: Repo[]; at: number }>()
 
+/* GraphQL search spends one of the GraphQL API's 5,000 points an hour, where REST search allows 30 searches a minute:
+   https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api */
+const SEARCH = `query($q: String!) {
+  search(query: $q, type: REPOSITORY, first: 10) { nodes { ... on Repository { name owner { login } description stargazers_count: stargazerCount } } }
+}`
+
 const search = (app: string, token: GitHub.Token) =>
   Effect.gen(function* () {
     const key = squash(app)
     const hit = searched.get(key)
     if (hit && Date.now() - hit.at < 3_600_000) return hit.repos
-    const query = new URLSearchParams({ q: `${app.trim()} fork:false is:public`, sort: "stars", per_page: "10" })
-    const found = yield* GitHub.request<{ items: GitHubRepo[] }>(token, "GET", `/search/repositories?${query}`).pipe(Effect.option)
-    if (found._tag === "None") {
+    const found = yield* GitHub.request<{ data?: { search?: { nodes: (Listed | null)[] } } }>(token, "POST", "/graphql", {
+      query: SEARCH,
+      variables: { q: `${app.trim()} fork:false is:public sort:stars` },
+    }).pipe(Effect.option)
+    const nodes = found._tag === "Some" ? found.value.data?.search?.nodes : undefined
+    if (!nodes) {
       if (hit) return hit.repos
       return yield* new Problem({ message: "GitHub search is busy. Name the repo as owner/name instead." })
     }
-    const repos = found.value.items.map(toRepo)
+    const repos = nodes.filter((node) => node !== null).map(toRepo)
     keep(searched, key, { repos, at: Date.now() })
     return repos
   })
@@ -75,7 +86,7 @@ export const resolve = (q: string, token: GitHub.Token) =>
   })
 
 
-const API = "https://autofork-app.vercel.app/api"
+const API = "https://autofork.com/api"
 export const CODEX_AUTH_URL = `${API}/chatgpt/auth`
 
 const workflow = (branch: string) =>
