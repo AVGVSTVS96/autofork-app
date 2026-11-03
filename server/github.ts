@@ -73,7 +73,7 @@ const call = (token: Token, method: string, path: string, body?: unknown, condit
       return text
     },
     catch: (error) => (error instanceof GitHubError ? error : new GitHubError({ status: 0, path, message: String(error) })),
-  }).pipe(Effect.retry({ while: (error) => method === "GET" && transient(error), schedule: Schedule.exponential("300 millis"), times: 2 }))
+  }).pipe(Effect.retry({ while: (error) => (method === "GET" || path === "/graphql") && transient(error), schedule: Schedule.exponential("300 millis"), times: 2 }))
 }
 
 export const request = <A = unknown>(token: Token, method: string, path: string, body?: unknown) =>

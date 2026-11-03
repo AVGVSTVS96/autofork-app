@@ -54,16 +54,16 @@ const search = (app: string, token: GitHub.Token) =>
     const key = squash(app)
     const hit = searched.get(key)
     if (hit && Date.now() - hit.at < 3_600_000) return hit.repos
-    const found = yield* GitHub.request<{ data?: { search: { nodes: Listed[] } } }>(token, "POST", "/graphql", {
+    const found = yield* GitHub.request<{ data?: { search?: { nodes: (Listed | null)[] } } }>(token, "POST", "/graphql", {
       query: SEARCH,
       variables: { q: `${app.trim()} fork:false is:public sort:stars` },
     }).pipe(Effect.option)
-    const nodes = found._tag === "Some" ? found.value.data?.search.nodes : undefined
+    const nodes = found._tag === "Some" ? found.value.data?.search?.nodes : undefined
     if (!nodes) {
       if (hit) return hit.repos
       return yield* new Problem({ message: "GitHub search is busy. Name the repo as owner/name instead." })
     }
-    const repos = nodes.map(toRepo)
+    const repos = nodes.filter((node) => node !== null).map(toRepo)
     keep(searched, key, { repos, at: Date.now() })
     return repos
   })
