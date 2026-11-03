@@ -155,7 +155,7 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
       </div>
       <p className="fine">
         A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices. On a Claude plan with a 5-hour limit, runs
-        through <code>claude -p</code> like autofork's use it about 1.6x to 3x faster per token than Claude Code in a terminal, and weekly limits count them the
+        through <code>claude -p</code> like autofork's use it about 1.6x to 1.8x faster per token than interactive Claude Code, and weekly limits count them the
         same (
         <a href="https://github.com/pingdotgg/t3code/issues/24649" target="_blank" rel="noreferrer">
           T3 Code's A/B
