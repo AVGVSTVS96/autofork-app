@@ -153,7 +153,14 @@ export const SettingsCard = ({ owner, name, onSaved }: { owner: string; name: st
           <input type="number" min={0} step="any" value={shown(draft.limits.rebuild)} onChange={limit("rebuild")} />
         </label>
       </div>
-      <p className="fine">A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices.</p>
+      <p className="fine">
+        A rebuild starts only if its whole cap still fits under the month's, so none is cut off halfway. Costs are at API prices. On a Claude plan, Claude Code started by other tools drains the 5-hour limit 1.6x to 3x faster than interactive
+        Claude Code, so autofork labels its runs to drain it at the interactive rate,{" "}
+        <a href="https://github.com/pingdotgg/t3code/issues/24649" target="_blank" rel="noreferrer">
+          as T3 Code measured
+        </a>
+        .
+      </p>
       <div className="save">
         <button type="submit" className="btn primary" disabled={state.busy}>
           {state.busy ? "Saving…" : "Save"}
