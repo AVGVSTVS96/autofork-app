@@ -7,6 +7,9 @@ export class Problem extends Schema.TaggedError<Problem>()("Problem", { message:
 
 export class SignedOut extends Schema.TaggedError<SignedOut>()("SignedOut", {}, { httpApiStatus: 401 }) {}
 
+/* `from` is the repo to fork instead, when the one asked about is on GitHub but isn't an autofork */
+export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { from: Schema.NullOr(Schema.String) }, { httpApiStatus: 404 }) {}
+
 const SPLIT = /^(.+?)(?:,\s*but\s+|\s+but\s+|\s*:\s+|\s+(?:—|–|-)\s+|\s+to\s+)(.+)$/i
 
 export const squash = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "")
@@ -86,6 +89,9 @@ export const Run = Schema.Struct({
   steps: Schema.Array(Step),
   log: Schema.Array(Schema.String),
   moved: Schema.Boolean,
+  change: Schema.NullOr(Schema.String),
+  /* When the newest run started: later than startedAt when that run only skipped and this is the failure it skipped over */
+  latestAt: Schema.String,
 })
 export type Run = typeof Run.Type
 
@@ -136,7 +142,7 @@ export const AppGroup = HttpApiGroup.make("app")
       success: DeviceWait,
       error: [Problem, SignedOut],
     }),
-    HttpApiEndpoint.get("fork", "/api/forks/:owner/:name", { params: fork, success: Fork, error: Problem }),
+    HttpApiEndpoint.get("fork", "/api/forks/:owner/:name", { params: fork, success: Fork, error: [Problem, NotFound] }),
     HttpApiEndpoint.get("yours", "/api/forks/:owner/:name/yours", { params: fork, success: Schema.Boolean }),
     HttpApiEndpoint.get("settings", "/api/forks/:owner/:name/settings", { params: fork, success: Settings, error: [Problem, SignedOut] }),
     HttpApiEndpoint.put("saveSettings", "/api/forks/:owner/:name/settings", { params: fork, payload: Settings, success: Settings, error: [Problem, SignedOut] }),

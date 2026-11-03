@@ -84,6 +84,12 @@ export const failure = (cause: Cause.Cause<unknown>) => {
   return unreachable(error) ? "Couldn't reach autofork. Check your connection and try again." : "Something went wrong. Try again."
 }
 
+/* A repo that isn't an autofork, or isn't there: `from` is the repo to fork instead, when there is one */
+export const notFound = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.squash(cause) as { _tag?: string; from?: string | null }
+  return error?._tag === "NotFound" ? { from: error.from ?? null } : null
+}
+
 export const unwrap = <A>(exit: Exit.Exit<A, unknown>) => {
   if (Exit.isSuccess(exit)) return exit.value
   throw new Error(failure(exit.cause))

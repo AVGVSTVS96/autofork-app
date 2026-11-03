@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Outlet, type ParsedLocation, type RouterHistory } from "@tanstack/react-router"
 import { isAgent, type Agent } from "../shared/api.ts"
 import { Home } from "./Home.tsx"
+import { NotFound } from "./ui.tsx"
 
 const root = createRootRoute({ component: Outlet })
 
@@ -61,7 +62,12 @@ const forkIt = ({ fromLocation: from, toLocation: to }: { fromLocation?: ParsedL
     : false
 
 export const makeRouter = (history?: RouterHistory) =>
-  createRouter({ routeTree: root.addChildren([home, forks, link, verify, fork]), defaultViewTransition: { types: forkIt }, ...(history ? { history } : {}) })
+  createRouter({
+    routeTree: root.addChildren([home, forks, link, verify, fork]),
+    defaultViewTransition: { types: forkIt },
+    defaultNotFoundComponent: NotFound,
+    ...(history ? { history } : {}),
+  })
 
 declare module "@tanstack/react-router" {
   interface Register {
