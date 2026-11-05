@@ -1,3 +1,5 @@
+> Moved to [AVGVSTVS96/autofork](https://github.com/AVGVSTVS96/autofork/tree/main/apps/web) (`apps/web`). This repo is archived.
+
 # autofork-app
 
 The app behind [autofork.com](https://autofork.com): name an open source repo and the change you want, and get a fork in your GitHub account where an agent builds that change, and it goes back on top of every release.
