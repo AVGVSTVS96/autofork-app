@@ -1,6 +1,6 @@
 # autofork-app
 
-The app behind [autofork.com](https://autofork.com): name an open source repo and the change you want, and get a fork in your GitHub account where an agent builds that change and keeps it current with every release.
+The app behind [autofork.com](https://autofork.com): name an open source repo and the change you want, and get a fork in your GitHub account where an agent builds that change, and it goes back on top of every release.
 
 ```
 "T3 Code, but always show context usage"
@@ -11,7 +11,7 @@ The app behind [autofork.com](https://autofork.com): name an open source repo an
    │
    └─ your fork     .autofork/<change>/PATCH.md + the autofork workflow
                     the agent builds it in your own GitHub Actions,
-                    on your own plan, and rebuilds it on every release
+                    on your own plan, and rebuilds it when a release breaks it
 ```
 
 The sign-in goes straight into your fork as an Actions secret (`CLAUDE_CODE_OAUTH_TOKEN` or `CODEX_AUTH`). The app stores no tokens: your GitHub and WorkOS sessions are encrypted cookies, and settings are read from your fork. Its Convex database keeps linked forks, rebuild costs, and which signed-in people may see which fork's spend. When Codex refreshes its sign-in during a run, the workflow sends it back with its GitHub OIDC token and the app writes it to the same secret.
