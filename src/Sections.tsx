@@ -106,6 +106,7 @@ export const Meant = () => (
                 33k
               </i>
               <Send />
+              <i className="broke">didn't fit</i>
             </span>
             <span className="pop">
               Usage <b>33k of 200k</b>
@@ -113,7 +114,7 @@ export const Meant = () => (
           </div>
           <p className="said">
             <i className="dot agent" />
-            <span>They added a usage meter in a menu. Yours uses it and stays in sight.</span>
+            <span>They added a usage meter in a menu. The agent rebuilt yours on it.</span>
           </p>
         </article>
       </div>
