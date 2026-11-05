@@ -125,7 +125,7 @@ const threads: Thread[] = [
     worked: "Worked for 6m 05s",
     reply: [
       "Done. Every change we've made to his template, from calling your assistant to the orb on the Lock Screen, is now one patch, and its PATCH.md says what you said.",
-      "Until he pushes something new, the hourly check is git only and ends in a second.",
+      "Until he pushes something new, the check every 15 minutes is git only and ends in seconds.",
     ],
     files: [5, 80593, 0],
   },
